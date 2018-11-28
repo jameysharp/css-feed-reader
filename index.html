@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Reader demo</title>
+	<style>
+		body {
+			position: absolute;
+			width: 100%;
+			height: 100%;
+			margin: 0;
+			display: flex;
+			flex-direction: column;
+		}
+		#top, #left {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+		#top {
+			width: 100%;
+			background-color: black;
+			color: white;
+			display: flex;
+			align-items: center;
+		}
+		#top img {
+			background-color: #93320C;
+			padding: 0.5em;
+		}
+		#top img:hover {
+			background-color: #4A1600;
+		}
+		#title {
+			flex-grow: 1;
+			text-align: center;
+		}
+		.timestamp {
+			color: #DDD;
+			font-size: 80%;
+		}
+		#left .timestamp {
+			color: #555;
+		}
+		#left {
+			position: absolute;
+			top: 0;
+			left: -30%;
+			height: 100%;
+			background-color: #EEC;
+			border: 2px solid black;
+			overflow: auto;
+			visibility: hidden;
+			width: 30%;
+			transition-property: visibility, left;
+			transition-duration: 100ms;
+		}
+		#expand-sidebar:checked ~ #left {
+			visibility: visible;
+			left: 0;
+		}
+		#expand-sidebar-btn {
+			padding: 3px;
+			background-color: #EEC;
+			color: black;
+			font-size: 120%;
+			margin-right: 1em;
+			transition-property: margin;
+			transition-duration: 100ms;
+		}
+		#expand-sidebar:checked ~ #top #expand-sidebar-btn {
+			margin-left: 30%;
+		}
+		#content {
+			flex-grow: 1;
+		}
+		iframe {
+			margin: 0;
+			padding: 0;
+			border: 0;
+			width: 100%;
+			height: 100%;
+		}
+		input, .preload {
+			display: none;
+		}
+		#page1:checked ~ * .page1 {
+			display: block;
+		}
+		#page2:checked ~ * .page2 {
+			display: block;
+		}
+		#page3:checked ~ * .page3 {
+			display: block;
+		}
+		#page1:checked ~ #left label[for="page1"] {
+			font-weight: bold;
+		}
+		#page2:checked ~ #left label[for="page2"] {
+			font-weight: bold;
+		}
+		#page3:checked ~ #left label[for="page3"] {
+			font-weight: bold;
+		}
+	</style>
+</head>
+<body>
+	<input type="checkbox" id="expand-sidebar" />
+	<input type="radio" name="page" id="page1" checked />
+	<input type="radio" name="page" id="page2" />
+	<input type="radio" name="page" id="page3" />
+
+	<div id="top">
+		<label for="expand-sidebar" id="expand-sidebar-btn">&raquo;</label>
+		<img class="preload page1" src="https://www.comic-rocket.com/media/img/icon-prevpage.png" />
+		<div class="preload page1" id="title">
+			<div>How not to replace email</div>
+			<div class="timestamp">Feb 16, 2018</div>
+		</div>
+		<label class="preload page1" for="page2"><img src="https://www.comic-rocket.com/media/img/icon-nextpage.png" /></label>
+		<label class="preload page2" for="page1"><img src="https://www.comic-rocket.com/media/img/icon-prevpage.png" /></label>
+		<div class="preload page2" id="title">
+			<div>c2rust vs Corrode</div>
+			<div class="timestamp">Jun 30, 2018</div>
+		</div>
+		<label class="preload page2" for="page3"><img src="https://www.comic-rocket.com/media/img/icon-nextpage.png" /></label>
+		<label class="preload page3" for="page2"><img src="https://www.comic-rocket.com/media/img/icon-prevpage.png" /></label>
+		<div class="preload page3" id="title">
+			<div>Private and secure multiparty histograms</div>
+			<div class="timestamp">Jul 10, 2018</div>
+		</div>
+		<img class="preload page3" src="https://www.comic-rocket.com/media/img/icon-nextpage.png" />
+	</div>
+
+	<div id="content">
+	<iframe class="preload page1" src="https://jamey.thesharps.us/2018/02/16/how-not-to-replace-email/"></iframe>
+	<iframe class="preload page2" src="https://jamey.thesharps.us/2018/06/30/c2rust-vs-corrode/"></iframe>
+	<iframe class="preload page3" src="https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms/"></iframe>
+	</div>
+
+	<div id="left">
+		<ul>
+			<li>
+				<label for="page1">How not to replace email
+				<div class="timestamp">Feb 16, 2018</div>
+				</label>
+			</li>
+			<li>
+				<label for="page2">c2rust vs Corrode
+				<div class="timestamp">Jun 30, 2018</div>
+				</label>
+			</li>
+			<li>
+				<label for="page3">Private and secure multiparty histograms
+				<div class="timestamp">Jul 10, 2018</div>
+				</label>
+			</li>
+		</ul>
+	</div>
+</body>
+</html>
