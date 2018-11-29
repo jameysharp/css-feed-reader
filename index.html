@@ -94,12 +94,14 @@
 		#content {
 			flex-grow: 1;
 		}
+		#content * {
+			width: 100%;
+			height: 100%;
+		}
 		iframe {
 			margin: 0;
 			padding: 0;
 			border: 0;
-			width: 100%;
-			height: 100%;
 		}
 		input, .preload {
 			display: none;
@@ -153,9 +155,11 @@
 	</div>
 
 	<div id="content">
-	<iframe class="preload page1" src="https://jamey.thesharps.us/2018/02/16/how-not-to-replace-email/"></iframe>
-	<iframe class="preload page2" src="https://jamey.thesharps.us/2018/06/30/c2rust-vs-corrode/"></iframe>
-	<iframe class="preload page3" src="https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms/"></iframe>
+		<noscript id="preloadContent">
+		<iframe class="preload page1" src="https://jamey.thesharps.us/2018/02/16/how-not-to-replace-email/"></iframe>
+		<iframe class="preload page2" src="https://jamey.thesharps.us/2018/06/30/c2rust-vs-corrode/"></iframe>
+		<iframe class="preload page3" src="https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms/"></iframe>
+		</noscript>
 	</div>
 
 	<div id="left">
@@ -177,5 +181,43 @@
 			</li>
 		</ul>
 	</div>
+
+	<!-- progressive enhancements -->
+	<script>
+		(function() {
+			var preloadContent = document.getElementById("preloadContent");
+
+			// copy the noscript tag's contents into a new,
+			// detached, div tag
+			var contentParent = document.createElement("div");
+			contentParent.innerHTML = preloadContent.innerHTML;
+
+			// before attaching the div to the document, remove all
+			// the src attributes so the iframes don't really load
+			Array.prototype.forEach.call(document.getElementsByName("page"), function(page) {
+				// but allow loading whichever page we're going
+				// to display first
+				if(page.checked)
+					return;
+
+				var iframe = contentParent.getElementsByClassName(page.id)[0];
+				iframe.setAttribute("data-src", iframe.getAttribute("src"));
+				iframe.removeAttribute("src");
+
+				// the first time someone jumps to a page, load
+				// its iframe contents
+				page.addEventListener("change", function() {
+					if(!iframe.hasAttribute("data-src"))
+						return;
+					iframe.setAttribute("src", iframe.getAttribute("data-src"));
+					iframe.removeAttribute("data-src");
+				}, { once: true });
+			});
+
+			// finally, replace the noscript tag with the fixed-up
+			// div tag that contains all the iframes
+			document.getElementById("content").replaceChild(contentParent, preloadContent);
+		})();
+	</script>
 </body>
 </html>
