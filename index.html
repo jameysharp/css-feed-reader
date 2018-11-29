@@ -24,16 +24,20 @@
 			display: flex;
 			align-items: center;
 		}
+		#top > * {
+			flex-shrink: 0;
+			flex-grow: 0;
+		}
 		#top img {
 			background-color: #93320C;
 			padding: 0.5em;
-			flex-shrink: 0;
 		}
 		#top img:hover {
 			background-color: #4A1600;
 		}
-		.title {
+		#top > .title {
 			flex-grow: 1;
+			flex-shrink: 1;
 			text-align: center;
 			overflow: hidden;
 			white-space: nowrap;
