@@ -27,13 +27,16 @@
 		#top img {
 			background-color: #93320C;
 			padding: 0.5em;
+			flex-shrink: 0;
 		}
 		#top img:hover {
 			background-color: #4A1600;
 		}
-		#title {
+		.title {
 			flex-grow: 1;
 			text-align: center;
+			overflow: hidden;
+			white-space: nowrap;
 		}
 		.timestamp {
 			color: #DDD;
@@ -113,19 +116,19 @@
 	<div id="top">
 		<label for="expand-sidebar" id="expand-sidebar-btn">&raquo;</label>
 		<img class="preload page1" src="https://www.comic-rocket.com/media/img/icon-prevpage.png" />
-		<div class="preload page1" id="title">
+		<div class="preload page1 title">
 			<div>How not to replace email</div>
 			<div class="timestamp">Feb 16, 2018</div>
 		</div>
 		<label class="preload page1" for="page2"><img src="https://www.comic-rocket.com/media/img/icon-nextpage.png" /></label>
 		<label class="preload page2" for="page1"><img src="https://www.comic-rocket.com/media/img/icon-prevpage.png" /></label>
-		<div class="preload page2" id="title">
+		<div class="preload page2 title">
 			<div>c2rust vs Corrode</div>
 			<div class="timestamp">Jun 30, 2018</div>
 		</div>
 		<label class="preload page2" for="page3"><img src="https://www.comic-rocket.com/media/img/icon-nextpage.png" /></label>
 		<label class="preload page3" for="page2"><img src="https://www.comic-rocket.com/media/img/icon-prevpage.png" /></label>
-		<div class="preload page3" id="title">
+		<div class="preload page3 title">
 			<div>Private and secure multiparty histograms</div>
 			<div class="timestamp">Jul 10, 2018</div>
 		</div>
