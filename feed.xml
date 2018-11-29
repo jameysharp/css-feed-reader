@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<?xml-stylesheet href="reader.xsl" type="application/xslt+xml"?>
+<?xml-stylesheet href="reader.xsl" type="text/xsl"?>
 <feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.5.1">Jekyll</generator><link href="https://jamey.thesharps.us/feed-7-cc6f7f9ea5a281d24a9584e12a4c6330.xml" rel="prev-archive"/><link href="https://jamey.thesharps.us/feed.xml" rel="self" type="application/atom+xml" /><link href="https://jamey.thesharps.us/" rel="alternate" type="text/html" /><updated>2018-07-23T19:08:53-07:00</updated><id>https://jamey.thesharps.us/</id><title type="html">non-O(n) musings</title><subtitle>Sometimes linearity is overrated.</subtitle><entry><title type="html">Private and secure multiparty histograms</title><link href="https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms/" rel="alternate" type="text/html" title="Private and secure multiparty histograms" /><published>2018-07-10T21:01:00-07:00</published><updated>2018-07-10T21:01:00-07:00</updated><id>https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms</id><content type="html" xml:base="https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms/">&lt;p&gt;Please pick a number between 1 and 10, and don’t tell anybody what you
 picked.&lt;/p&gt;
 
