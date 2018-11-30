@@ -150,42 +150,35 @@
 	</div>
 
 	<!-- progressive enhancements -->
-	<script>
+	<script><xsl:text>
 		(function() {
-			var preloadContent = document.getElementById("preloadContent");
+			var iframes = document.createElement("div");
+			function preload(pageid, src) {
+				// get the radio button and create a new iframe
+				var page = document.getElementById(pageid);
+				var iframe = document.createElement("iframe");
 
-			// copy the noscript tag's contents into a new,
-			// detached, div tag
-			var contentParent = document.createElement("div");
-			contentParent.innerHTML = preloadContent.innerHTML;
+				// this should match the classes in the noscript tag
+				iframe.className = "preload " + pageid;
 
-			// before attaching the div to the document, remove all
-			// the src attributes so the iframes don't really load
-			Array.prototype.forEach.call(document.getElementsByName("page"), function(page) {
-				// but allow loading whichever page we're going
-				// to display first
 				if(page.checked)
-					return;
+					// immediately load the page we're displaying first
+					iframe.src = src;
+				else
+					// otherwise delay until someone navigates to this page
+					page.addEventListener("change", function() {
+						iframe.src = src;
+					}, { once: true });
 
-				var iframe = contentParent.getElementsByClassName(page.id)[0];
-				iframe.setAttribute("data-src", iframe.getAttribute("src"));
-				iframe.removeAttribute("src");
+				iframes.appendChild(iframe);
+			}</xsl:text>
+			<xsl:apply-templates select="//atom:entry" mode="js" />
+			<xsl:text>
 
-				// the first time someone jumps to a page, load
-				// its iframe contents
-				page.addEventListener("change", function() {
-					if(!iframe.hasAttribute("data-src"))
-						return;
-					iframe.setAttribute("src", iframe.getAttribute("data-src"));
-					iframe.removeAttribute("data-src");
-				}, { once: true });
-			});
-
-			// finally, replace the noscript tag with the fixed-up
-			// div tag that contains all the iframes
-			document.getElementById("content").replaceChild(contentParent, preloadContent);
+			// finally, replace the noscript tag with the new iframes
+			document.getElementById("content").replaceChild(iframes, document.getElementById("preloadContent"));
 		})();
-	</script>
+	</xsl:text></script>
 </body>
 </html>
 </xsl:template>
@@ -242,5 +235,9 @@
 		</label>
 	</li>
 </xsl:template>
+
+<xsl:template match="*" mode="js">
+			preload("page<xsl:value-of select="position()"/>", "<xsl:value-of select="atom:link[@rel='alternate']/@href"/>");<!--
+--></xsl:template>
 
 </xsl:stylesheet>
