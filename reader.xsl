@@ -12,10 +12,10 @@
 <xsl:template match="/">
 <html>
 <head>
-	<link type="application/atom+xml" rel="alternate" href="{/atom:feed/atom:link[@rel='self']/@href}" title="{/atom:feed/atom:title}" />
+	<link type="application/atom+xml" rel="alternate" href="{//atom:feed/atom:link[@rel='self']/@href}" title="{//atom:feed/atom:title}" />
 	<meta name="generator" content="https://github.com/jameysharp/css-feed-reader" />
 	<meta name="viewport" content="width=device-width" />
-	<title><xsl:value-of select="/atom:feed/atom:title"/></title>
+	<title><xsl:value-of select="//atom:feed/atom:title"/></title>
 	<style>
 		<xsl:text>
 		body {
