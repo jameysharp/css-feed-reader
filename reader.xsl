@@ -37,6 +37,8 @@
 			color: white;
 			display: flex;
 			align-items: center;
+			flex-shrink: 0;
+			flex-grow: 0;
 		}
 		#top > * {
 			flex-shrink: 0;
