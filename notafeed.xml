@@ -1,0 +1,2515 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="reader.xsl" type="text/xsl"?>
+<wrapper>
+<feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.5.1">Jekyll</generator><link href="https://jamey.thesharps.us/feed-7-cc6f7f9ea5a281d24a9584e12a4c6330.xml" rel="prev-archive"/><link href="https://jamey.thesharps.us/feed.xml" rel="self" type="application/atom+xml" /><link href="https://jamey.thesharps.us/" rel="alternate" type="text/html" /><updated>2018-07-23T19:08:53-07:00</updated><id>https://jamey.thesharps.us/</id><title type="html">non-O(n) musings</title><subtitle>Sometimes linearity is overrated.</subtitle><entry><title type="html">Private and secure multiparty histograms</title><link href="https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms/" rel="alternate" type="text/html" title="Private and secure multiparty histograms" /><published>2018-07-10T21:01:00-07:00</published><updated>2018-07-10T21:01:00-07:00</updated><id>https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms</id><content type="html" xml:base="https://jamey.thesharps.us/2018/07/10/private-secure-multiparty-histograms/">&lt;p&gt;Please pick a number between 1 and 10, and don’t tell anybody what you
+picked.&lt;/p&gt;
+
+&lt;p&gt;Got it? Great.&lt;/p&gt;
+
+&lt;p&gt;Now, I know you chose a number with deep personal meaning to you. Maybe
+the number you chose could cause you some trouble if other people knew
+it? If it helps you get into the spirit of this exercise, you can
+pretend your number represents your salary or the number of hours you
+sleep per day or the number of showers you take per week.&lt;/p&gt;
+
+&lt;p&gt;At this point, everyone reading this post has picked a number, and none
+of you want to share it. You especially don’t want to give it to
+Facebook or Cambridge Analytica or any of these big companies that make
+their money by selling what they know about you.&lt;/p&gt;
+
+&lt;p&gt;But you’re probably curious. How many other people picked the same
+number? How popular were the numbers you didn’t pick? (So long as you
+can keep your privacy, there are lots of good reasons to contribute to
+aggregate research, such as medical studies.)&lt;/p&gt;
+
+&lt;p&gt;We’ll answer those questions with a &lt;a href=&quot;https://en.wikipedia.org/wiki/Histogram&quot;&gt;histogram&lt;/a&gt;. But I’ll walk you
+through techniques that ensure that you don’t have to reveal your secret
+number to anyone in the process of computing the histogram, and
+furthermore that someone who learns the information in the histogram
+still can’t find out what your secret number was.&lt;/p&gt;
+
+&lt;p&gt;There will be nothing new here for experts in differential privacy or
+secure multiparty computation; instead I’m aiming for a tutorial for
+programmers who aren’t familiar with these fields. Also, don’t rely on
+my explanations to implement anything where you really care about
+security. (This falls under the general advice, “don’t roll your own
+crypto.”) Rather I just want to spread awareness of several decades of
+research that are very relevant to us today.&lt;/p&gt;
+
+&lt;h1 id=&quot;what-is-privacy-really&quot;&gt;What is “privacy”, really?&lt;/h1&gt;
+
+&lt;p&gt;You might expect that a histogram is pretty good for keeping individual
+numbers secret. If a hundred people are counted in the same histogram,
+how could I prove which bin you’re in?&lt;/p&gt;
+
+&lt;p&gt;However: there’s a long history of people publishing data that seemed
+like it shouldn’t breach anyone’s privacy, only for someone to discover
+that in conjunction with other information, it wasn’t nearly as private
+as it seemed. An extreme case here would be if I know the secret number
+of everyone except you: I can then tell which bin you’re in by
+elimination. By the same token, if you and I are the only participants
+in this project, then I can subtract my contribution from the histogram
+and yours will be all that’s left. Privacy compromises can get much more
+complicated than either of these two cases, of course.&lt;/p&gt;
+
+&lt;p&gt;One well-known example was when Netflix published anonymized movie
+rental histories for their &lt;a href=&quot;https://en.wikipedia.org/wiki/Netflix_Prize&quot;&gt;Netflix Prize&lt;/a&gt; competition in 2006. By
+2007, researchers had demonstrated how to correlate the anonymized
+Netflix ratings with public movie ratings from IMDb, successfully
+re-identifying private movie rating records in the Netflix dataset, with
+implications for the privacy of people’s sexuality and their political
+and religious views&lt;sup id=&quot;fnref:deanon&quot;&gt;&lt;a href=&quot;#fn:deanon&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;.&lt;/p&gt;
+
+&lt;p&gt;If you want to know whether a piece of information is going to deprive
+someone of their privacy, the lesson here is you can’t just reason about
+what an adversary can learn from the information you’re publishing. You
+have to consider everything they could possibly have known already.&lt;/p&gt;
+
+&lt;p&gt;So now we’ve gone from “this seems fine” to “this seems impossible!”&lt;/p&gt;
+
+&lt;p&gt;It turns out however that there are general techniques which can provably
+preserve privacy! The field is called “differential privacy”. Research in this
+area kicked off with Dwork, McSherry, Nissim, and Smith publishing
+&lt;a href=&quot;https://www.microsoft.com/en-us/research/publication/calibrating-noise-to-sensitivity-in-private-data-analysis/&quot;&gt;“Calibrating Noise to Sensitivity in Private Data Analysis”&lt;/a&gt; in
+2006, although that paper did not yet use the “differential privacy”
+terminology.&lt;/p&gt;
+
+&lt;p&gt;Differential privacy promises that the data generated from a dataset
+won’t be significantly different whether your data is in that dataset or
+not, so you might as well participate. Because a dataset that includes
+you is essentially indistinguishable from one you aren’t in, it doesn’t
+matter what the adversary knows!&lt;/p&gt;
+
+&lt;p&gt;There is a trade-off though between privacy and utility. Because the
+definition of differential privacy assumes the adversary could already
+know anything and everything, differentially private results must always
+have random noise added to them to obscure individual contributions to
+the results. Papers in this area are largely about deciding exactly how
+little noise you can get away with adding, because the more noise there
+is, the less useful the result is.&lt;/p&gt;
+
+&lt;p&gt;An alternative definition called “Distributional Differential Privacy”
+(DDP), introduced in Bassily, Groce, Katz, Smith: &lt;a href=&quot;http://people.reed.edu/~agroce/FOCS2013.pdf&quot;&gt;“Coupled-Worlds
+Privacy: Exploiting Adversarial Uncertainty in Statistical Data
+Privacy”&lt;/a&gt;, relaxes the assumption about an adversary’s abilities.
+Instead of assuming they could know everything, we define our
+assumptions about exactly what the adversary could know in terms of
+probability distributions. This requires some caution because if we omit
+the distribution that turns out to reflect some adversary’s actual
+knowledge, then all our privacy claims are invalid. But as long as we’re
+careful we can get more useful results by recognizing that real
+adversaries are not actually all-powerful.&lt;/p&gt;
+
+&lt;p&gt;One algorithm given in the original DDP papers is for privacy-preserving
+histograms, which is exactly what we need here&lt;sup id=&quot;fnref:usecase&quot;&gt;&lt;a href=&quot;#fn:usecase&quot; class=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;!&lt;/p&gt;
+
+&lt;h1 id=&quot;privacy-preserving-histograms&quot;&gt;Privacy-preserving histograms&lt;/h1&gt;
+
+&lt;p&gt;For now, let’s assume you believe I’m a trustworthy person, so you’re
+willing to give me your secret number and I’ll promise not to reveal it
+to anyone else. (We’ll improve on this assumption later.)&lt;/p&gt;
+
+&lt;p&gt;Once everyone has handed me their secret numbers, I can take the
+following steps:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;I’ll pick a probability &lt;em&gt;p&lt;/em&gt; and a whole number &lt;em&gt;k&lt;/em&gt; based on how many
+people are participating and on how much privacy loss I’m willing to
+accept.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;For each participant, I decide at random whether to use their number
+at all. Every participant needs to have the same probability, &lt;em&gt;p&lt;/em&gt;, of
+being included. It’s very important that nobody be able to predict
+these decisions.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Count how many of the selected participants fall in each bin.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;If any bin has a count less than &lt;em&gt;k&lt;/em&gt;, report that bin as 0 instead.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Section 6.2 of Adam Groce’s PhD thesis, &lt;a href=&quot;https://www.cs.umd.edu/~jkatz/THESES/groce.pdf&quot;&gt;“New Notions and Mechanisms for
+Statistical Privacy”&lt;/a&gt;, contains the proof of the following
+statement, given that I follow the above procedure:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;An adversary cannot learn about an individual, even if the attacker
+knows that the individual was in the sample. Consequently, the
+adversary cannot determine if a given individual was in the sample to
+begin with.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;This should be a fairly comforting result. Sadly there are several
+details in the proof I haven’t been able to follow, so I have to take
+Groce’s word for it.&lt;/p&gt;
+
+&lt;p&gt;I’ll also refer you to the thesis for alternate choices of sampling
+distributions, as well as how to pick &lt;em&gt;p&lt;/em&gt; and &lt;em&gt;k&lt;/em&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;secure-multiparty-computation&quot;&gt;Secure multiparty computation&lt;/h1&gt;
+
+&lt;p&gt;What if you don’t trust me with your secret number? (I’m hurt, but I’ll
+get over it.)&lt;/p&gt;
+
+&lt;p&gt;“Secure Multi-Party Computation” (often abbreviated “MPC”) is a
+sub-field of cryptography where people who have secrets they aren’t
+willing to share with each other can nonetheless work together to
+compute some function combining all those secrets.&lt;/p&gt;
+
+&lt;p&gt;In this case we’re going to use MPC techniques so you don’t have to
+reveal your secret number to anyone. Instead of relying on me to combine
+everyone’s secrets, you’ll work directly with the other participants to
+run the above algorithm, and they won’t learn your secret number either.&lt;/p&gt;
+
+&lt;p&gt;Researchers have proposed a variety of MPC techniques that are
+remarkably generic: they can compute anything that could be computed by
+an arbitrary combination of either boolean logic gates or addition and
+multiplication. It turns out you can express those in terms of each
+other, but some algorithms are simpler in boolean logic and others are
+simpler in arithmetic.&lt;/p&gt;
+
+&lt;p&gt;The above histogram algorithm can be expressed fairly clearly in either
+style, but I think I can better explain a boolean circuit solution than
+the alternatives based on number theory, so let’s focus on that.&lt;/p&gt;
+
+&lt;h1 id=&quot;using-boolean-circuits&quot;&gt;Using boolean circuits&lt;/h1&gt;
+
+&lt;p&gt;The boolean-circuit style of MPC originates in a 1987 paper called &lt;a href=&quot;http://www.wisdom.weizmann.ac.il/~oded/gmw2.html&quot;&gt;“How
+to Solve any Multi-Party Protocol Problem”&lt;/a&gt; (by Goldreich, Micali,
+and Wigderson). That paper focused on presenting a constructive proof
+that &lt;em&gt;all&lt;/em&gt; polytime-computable functions can be computed privately.
+Which is super cool, but they didn’t address questions of efficiency, or
+a variety of other implementation details one might care about.&lt;/p&gt;
+
+&lt;p&gt;Instead let’s look at a paper that follows the above construction but
+makes specific implementation choices and evaluates performance on a
+real implementation. Choi &lt;em&gt;et al&lt;/em&gt; published &lt;a href=&quot;http://www.ee.columbia.edu/~kwhwang/projects/gmw.html&quot;&gt;“Secure Multi-Party
+Computation of Boolean Circuits with Applications to Privacy in On-Line
+Marketplaces”&lt;/a&gt; in 2012. As a non-expert in this
+field, I found their paper relatively easy to follow, which is somewhat
+unusual in cryptography papers! The paper provides a nice overview
+together with plenty of citations to papers describing the fundamental
+building blocks. The authors also published the source code of their
+implementation, if you want something to play with, although I haven’t
+tested whether it still builds.&lt;/p&gt;
+
+&lt;p&gt;In this framework, every computation is expressed as a circuit composed
+of AND gates and XOR gates&lt;sup id=&quot;fnref:xor-not&quot;&gt;&lt;a href=&quot;#fn:xor-not&quot; class=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt;. If you’re used to writing
+software, at first glance this feels super limiting. Where are the loops
+and if-statements and function calls? How do I do math or manipulate
+text or construct fancy data structures?&lt;/p&gt;
+
+&lt;p&gt;Hardware designers, on the other hand, deal with this all the time.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Function calls are replaced by just copying another instance of the
+circuit everywhere it’s needed.&lt;/li&gt;
+  &lt;li&gt;There are tons of known boolean circuits for doing arithmetic.&lt;/li&gt;
+  &lt;li&gt;If-statements involve computing the result of the conditional
+expression “c” as well as &lt;em&gt;both&lt;/em&gt; the true and false branch results “t”
+and “f”, then computing “(c AND t) OR (NOT c AND f)”.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;And so on. A task that takes just a few lines of code in your favorite
+programming language might blow up into a giant circuit, but still, many
+more things are possible than one might expect.&lt;/p&gt;
+
+&lt;p&gt;Once you’ve described your program as a boolean circuit, I encourage you
+to read either of the papers I cited above to learn how to turn that
+into a secure computation&lt;sup id=&quot;fnref:oblivious-transfer&quot;&gt;&lt;a href=&quot;#fn:oblivious-transfer&quot; class=&quot;footnote&quot;&gt;4&lt;/a&gt;&lt;/sup&gt;. But I’ll note a couple
+of important details now:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;In this system, every participant splits up their secret inputs into
+random parts, and assigns one part to each of the other participants.
+The “real” value is the XOR of all the parts together, but since each
+participant sees only one of the random parts, nobody can draw any
+conclusions about what the actual value is.&lt;/li&gt;
+  &lt;li&gt;Because of the way the parts are distributed, each participant can
+compute their part of the result of an XOR by simply doing an XOR of
+their share of the inputs. So XOR operations are super easy.&lt;/li&gt;
+  &lt;li&gt;However, AND operations require pairwise communications between all
+participants, as well as cryptographic operations, so they’re
+relatively expensive.&lt;/li&gt;
+  &lt;li&gt;At the end of the computation, all the participants’ parts can be
+combined to get the final answer.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;As a warm-up, let’s devise three kinds of circuits, which we’ll then
+rearrange and combine in various ways to solve the histogram problem.&lt;/p&gt;
+
+&lt;h1 id=&quot;addition-circuits&quot;&gt;Addition circuits&lt;/h1&gt;
+
+&lt;p&gt;The first circuit we need adds two 1-bit numbers and a 1-bit carry
+input, producing their 1-bit sum and a 1-bit carry output. Hardware
+designers call this circuit a &lt;a href=&quot;https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder&quot;&gt;full adder&lt;/a&gt;, and if Wikipedia doesn’t
+satisfy your curiosity you should be able to find plenty of details in
+any introductory digital circuits textbook. I learned about them from a
+children’s book, personally, but I may have had a strange
+childhood&lt;sup id=&quot;fnref:twtw&quot;&gt;&lt;a href=&quot;#fn:twtw&quot; class=&quot;footnote&quot;&gt;5&lt;/a&gt;&lt;/sup&gt;.&lt;/p&gt;
+
+&lt;p&gt;A full adder needs 3 XOR gates and 2 AND gates&lt;sup id=&quot;fnref:or-xor&quot;&gt;&lt;a href=&quot;#fn:or-xor&quot; class=&quot;footnote&quot;&gt;6&lt;/a&gt;&lt;/sup&gt;. Remember, in this style of multi-party computation, XOR is fast while AND is slow.&lt;/p&gt;
+
+&lt;p&gt;To add numbers that are &lt;em&gt;N&lt;/em&gt; bits wide, the simplest option is to chain
+together &lt;em&gt;N&lt;/em&gt; copies of the full adder circuit. Connect the carry-output
+for the least-significant bit to the carry-input of the next bit, to
+form what’s called a &lt;a href=&quot;https://en.wikipedia.org/wiki/Adder_(electronics)#Ripple-carry_adder&quot;&gt;ripple-carry adder&lt;/a&gt;. This means we need 3·&lt;em&gt;N&lt;/em&gt;
+XOR gates and 2·&lt;em&gt;N&lt;/em&gt; AND gates.&lt;/p&gt;
+
+&lt;p&gt;This is a complete boolean circuit in its own right, and at this point
+we could use Choi &lt;em&gt;et al&lt;/em&gt;’s implementation of multi-party computation to
+securely find the sum of any number of secret inputs.&lt;/p&gt;
+
+&lt;h1 id=&quot;comparison-circuits&quot;&gt;Comparison circuits&lt;/h1&gt;
+
+&lt;p&gt;The next circuit we’ll build compares two N-bit numbers &lt;em&gt;A&lt;/em&gt; and &lt;em&gt;B&lt;/em&gt;,
+producing a 1-bit output that is 1 if &lt;em&gt;A&lt;/em&gt;&amp;lt;&lt;em&gt;B&lt;/em&gt; and 0 otherwise.&lt;/p&gt;
+
+&lt;p&gt;We could modify a full adder to perform &lt;a href=&quot;https://en.wikipedia.org/wiki/Adder%E2%80%93subtractor&quot;&gt;subtraction&lt;/a&gt; instead, but a
+specialized &lt;a href=&quot;https://en.wikipedia.org/wiki/Digital_comparator&quot;&gt;digital comparator&lt;/a&gt; is easier to think through.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;If the most-significant bit of &lt;em&gt;A&lt;/em&gt; and &lt;em&gt;B&lt;/em&gt; are 0 and 1, respectively,
+then &lt;em&gt;A&lt;/em&gt; is less than &lt;em&gt;B&lt;/em&gt;.&lt;/li&gt;
+  &lt;li&gt;If they’re equal (both 0 or both 1) then we should compare the next
+most significant bit of each.&lt;/li&gt;
+  &lt;li&gt;Otherwise, or if all the bits are equal, &lt;em&gt;A&lt;/em&gt; is not less than &lt;em&gt;B&lt;/em&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This needs 4 XOR gates and 2 AND gates per bit.&lt;/p&gt;
+
+&lt;p&gt;At this point we can solve variants of &lt;a href=&quot;https://en.wikipedia.org/wiki/Yao%27s_Millionaires%27_Problem&quot;&gt;Yao’s Millionaires’
+Problem&lt;/a&gt;, a thought experiment in cryptography where two
+people want to determine which of them has more money without actually
+revealing how much they have to each other.&lt;/p&gt;
+
+&lt;p&gt;However, every time we’re going to use this comparison circuit in the
+final histogram circuit, it turns out that either &lt;em&gt;A&lt;/em&gt; or &lt;em&gt;B&lt;/em&gt; is a public
+constant, so some of the inputs to these gates are known in advance.
+That allows us to simplify the circuit to 1 AND gate, and between 0 and
+2 XOR gates, per bit&lt;sup id=&quot;fnref:microoptimize-xor&quot;&gt;&lt;a href=&quot;#fn:microoptimize-xor&quot; class=&quot;footnote&quot;&gt;7&lt;/a&gt;&lt;/sup&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;random-number-circuits&quot;&gt;Random number circuits&lt;/h1&gt;
+
+&lt;p&gt;The third basic circuit we need is a little different, because it
+doesn’t correspond to any physical digital logic circuit. Instead, this
+one relies on a specific property of Choi &lt;em&gt;et al&lt;/em&gt;’s approach to
+multi-party computation.&lt;/p&gt;
+
+&lt;p&gt;Recall that Groce’s private histogram algorithm requires us to decide at
+random whether to include any given person’s private data in the final
+output, in such a way that the adversary can’t predict our decision.&lt;/p&gt;
+
+&lt;p&gt;So to start with, let’s figure out how to generate a single random bit,
+equally likely to be a 1 or a 0. None of the participants are allowed to
+know the value of this bit, but everyone needs to be able to use it in
+further computation.&lt;/p&gt;
+
+&lt;p&gt;Remember that in Choi &lt;em&gt;et al&lt;/em&gt;’s approach, a participant’s secret input
+bit is represented by giving every participant a random bit, constrained
+such that the XOR of all those bits produces the true value.&lt;/p&gt;
+
+&lt;p&gt;So to generate a secret random bit, instead of distributing shares of
+somebody’s secret input, each participant should just generate their own
+random bit, and together all those bits will represent a truly random
+bit&lt;sup id=&quot;fnref:uniform-xor&quot;&gt;&lt;a href=&quot;#fn:uniform-xor&quot; class=&quot;footnote&quot;&gt;8&lt;/a&gt;&lt;/sup&gt;.&lt;/p&gt;
+
+&lt;p&gt;We can extend this to generate a random bit that is 1 with probability
+&lt;em&gt;p&lt;/em&gt;. If we concatenate &lt;em&gt;N&lt;/em&gt; uniform random bits, we’ll get a uniform
+random &lt;em&gt;N&lt;/em&gt;-bit number. With probability &lt;em&gt;p&lt;/em&gt;, that number will be less
+than &lt;em&gt;p&lt;/em&gt; times 2^&lt;em&gt;N&lt;/em&gt;, so we can use our earlier less-than circuit to get
+the desired output.&lt;/p&gt;
+
+&lt;p&gt;We just have to pick a large enough &lt;em&gt;N&lt;/em&gt; that it can represent &lt;em&gt;p&lt;/em&gt; in
+fixed point with enough precision. To put that another way, &lt;em&gt;p&lt;/em&gt; needs to
+be close to an integer multiple of 1/2^&lt;em&gt;N&lt;/em&gt;. On the other hand, since the
+comparison circuit uses &lt;em&gt;N&lt;/em&gt; AND gates and those are expensive, it’s
+worth picking the smallest possible value of &lt;em&gt;N&lt;/em&gt; that lets us represent
+&lt;em&gt;p&lt;/em&gt; precisely enough for our needs.&lt;/p&gt;
+
+&lt;h1 id=&quot;histogram-circuits&quot;&gt;Histogram circuits!&lt;/h1&gt;
+
+&lt;p&gt;With that background in mind, let’s sketch a circuit for
+privacy-preserving histograms!&lt;/p&gt;
+
+&lt;p&gt;First we have to think about how each participant’s input should be
+encoded. I can think of two reasonable ways to represent your input:
+either as the binary encoding of your chosen secret number; or as one
+bit per histogram bin, where exactly one of the bits is 1. Using one bit
+per bin simplifies the circuit a little, but means you have to take
+extra steps to ensure that nobody sneakily puts themselves in multiple
+bins. And you can do that with “zero-knowledge proofs”, but it’s
+probably better to use an encoding with no redundancy or illegal states
+in it.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;In advance, everyone agrees on a probability &lt;em&gt;p&lt;/em&gt;, a whole number &lt;em&gt;k&lt;/em&gt;,
+and the shape of the circuit we’re about to evaluate. These are
+public parameters to the algorithm. If you believe the parameters
+aren’t good enough to protect your privacy, you can refuse to
+participate without revealing anything about your secret number.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;If everyone’s secret number is encoded in binary, then we need to
+convert to a bit-per-bin representation. Electrical engineers have
+lots of designs for converting between binary and so-called
+“&lt;a href=&quot;https://en.wikipedia.org/wiki/One-hot&quot;&gt;one-hot&lt;/a&gt;” encoding, but for simplicity just assume we’ll use the
+less-than circuit a bunch of times.&lt;/p&gt;
+
+    &lt;p&gt;Next you all need to decide whose inputs are actually going to get
+included in this histogram. For each participant, generate a random
+bit that is 1 with probability &lt;em&gt;p&lt;/em&gt;. Then AND that bit with each bin
+of that participant’s input.&lt;/p&gt;
+
+    &lt;p&gt;The level of paranoia in our random number circuit may have seemed
+excessive. But to make the correctness proof hold, we’re relying on
+the fact that none of the participants ever learn what any of the
+random numbers actually were, and also that none of them can
+influence whether somebody gets counted or not, so long as even one
+participant is honest.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Use a bunch of full-adder circuits to add up the number of 1-bits in
+each bin.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;For each bin, use the less-than circuit to check if &lt;em&gt;k&lt;/em&gt;-1 is less
+than the count in that bin; the result will be 1 if the count is big
+enough and 0 otherwise. The final result for that bin is the AND of
+this bit with each of the bits of the count.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Ta-da! Using distributional differential privacy, we saw how to make
+sure that the histogram &lt;em&gt;output&lt;/em&gt; doesn’t reveal more than we intended
+to. Now we’ve seen how to ensure that the &lt;em&gt;inputs&lt;/em&gt; are never revealed to
+anybody either.&lt;/p&gt;
+
+&lt;h1 id=&quot;histograms-using-arithmetic&quot;&gt;Histograms using arithmetic&lt;/h1&gt;
+
+&lt;p&gt;Many functions are inconvenient to express as boolean circuits. I mean,
+you can do it, but the circuits get huge. So I’d like to give a brief
+sense of what this would look like in an arithmetic setting instead.&lt;/p&gt;
+
+&lt;p&gt;Instead of taking AND and XOR as our basic operations, we can choose
+multiplication and addition over integers. However, like machine
+arithmetic on CPUs, these operations wrap if the result is bigger than
+some implementation-specified constant.&lt;/p&gt;
+
+&lt;p&gt;Some parts of the histogram algorithm are a lot simpler in this setting.
+Adding up the count of participants in each bin takes one addition per
+participant, instead of 2 AND gates per bit per participant. Even
+better, addition is the cheap operation while multiplication is
+expensive, so that stage becomes basically free.&lt;/p&gt;
+
+&lt;p&gt;Other parts are more complicated, because in general you can’t turn
+addition and multiplication into “return 1 if &lt;em&gt;A&lt;/em&gt;&amp;lt;&lt;em&gt;B&lt;/em&gt; and 0
+otherwise”. Fortunately in this setting we aren’t actually working with
+arbitrary-precision integers, so there are tricks you can play, such as
+detecting that a computation overflowed. I’m not going to go into detail
+here, but there are specific methods for implementing the less-than and
+random-number circuits we relied on in the previous section. If you’re
+interested, see &lt;a href=&quot;https://www.iacr.org/archive/pkc2007/44500343/44500343.pdf&quot;&gt;“Multiparty Computation for Interval, Equality, and
+Comparison without Bit-Decomposition Protocol”&lt;/a&gt; by
+Nishide and Ohta for one approach.&lt;/p&gt;
+
+&lt;p&gt;Since all the primitives we need exist in this multiparty arithmetic
+setting, clearly we can implement private histograms this way too! If
+you’re looking for a challenge, you could go implement this algorithm
+both ways and find out which one is more efficient, because I honestly
+don’t know…&lt;/p&gt;
+
+&lt;h1 id=&quot;summary&quot;&gt;Summary&lt;/h1&gt;
+
+&lt;p&gt;Well, the number you chose has remained your secret this whole time,
+even as you let people learn some aggregate information about a crowd of
+people that included you.&lt;/p&gt;
+
+&lt;p&gt;Recent news reports about businesses like Cambridge Analytica vacuuming
+up huge amounts of personal information to create creepy profiles of
+people have been scary wake-up calls regarding our privacy in the era of
+big data and algorithms. However, there are many positive uses for data
+collection, ranging from serious medical studies to helping people
+discover some entertaining thing they’ll enjoy.&lt;/p&gt;
+
+&lt;p&gt;With this post, I hope I’ve conveyed that it’s theoretically possible to
+get the personal and societal benefits of data collection, without the
+harms due to our personal data being used in ways we didn’t intend.&lt;/p&gt;
+
+&lt;p&gt;I’ve only touched on a few specific examples of research from the past
+several decades, and there’s a lot of work to be done on making these
+approaches efficient, scalable, and usable. But the foundations are
+there, so we should reject the corporate story that we have to give up
+all our privacy to get these benefits.&lt;/p&gt;
+
+&lt;h2 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h2&gt;
+&lt;div class=&quot;footnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:deanon&quot;&gt;
+      &lt;p&gt;Narayanan and Shmatikov. &lt;a href=&quot;https://www.cs.cornell.edu/~shmat/shmat_oak08netflix.pdf&quot;&gt;“Robust De-anonymization of Large Sparse Datasets”&lt;/a&gt;&amp;nbsp;&lt;a href=&quot;#fnref:deanon&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:usecase&quot;&gt;
+
+      &lt;p&gt;Much of the differential privacy literature uses sums or counts as
+examples, because those are easy to analyze—and a histogram is
+just a collection of counts. So finding a histogram algorithm in a
+paper in this field is not actually very difficult. I’ve chosen to
+write about this particular algorithm for two reasons. First, it’s
+pretty straightforward to adapt to the secure multiparty computation
+setting, but it has some interesting twists that let me discuss a
+bit more about that setting. Second, I started off trying to solve a
+different problem, and this algorithm has nice properties for my use
+case, though I won’t discuss that further right now because I don’t
+have a proof yet that my modifications to the algorithm are actually
+safe.&lt;/p&gt;
+
+      &lt;p&gt;If you’d like to compare this with an algorithm that was designed
+from the start to satisfy the original differential privacy
+definition in a multiparty computation setting, I recommend
+Bindschaedler &lt;em&gt;et al&lt;/em&gt;, &lt;a href=&quot;https://seclab.illinois.edu/wp-content/uploads/2017/01/bindschaedler17codaspy.pdf&quot;&gt;“Achieving Differential Privacy in Secure
+Multiparty Data Aggregation Protocols on Star Networks”&lt;/a&gt;.
+That algorithm is also fault-tolerant against some number of
+participants going offline partway through.&amp;nbsp;&lt;a href=&quot;#fnref:usecase&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:xor-not&quot;&gt;
+
+      &lt;p&gt;The original proposal by Goldreich &lt;em&gt;et al&lt;/em&gt; used NOT gates rather than
+XOR, but if you provide an always-true input, “NOT b” can be
+rewritten as “1 XOR b”. So Choi &lt;em&gt;et al&lt;/em&gt; can compute everything
+Goldreich &lt;em&gt;et al&lt;/em&gt; can, with the same efficiency.&amp;nbsp;&lt;a href=&quot;#fnref:xor-not&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:oblivious-transfer&quot;&gt;
+
+      &lt;p&gt;If you really get into the implementation details of the boolean
+circuit approach, you may also be interested in papers on “oblivious
+transfer”, such as Donald Beaver, &lt;a href=&quot;https://link.springer.com/content/pdf/10.1007%2F3-540-44750-4_8.pdf&quot;&gt;“Precomputing Oblivious
+Transfer”&lt;/a&gt;, and Li &lt;em&gt;et al&lt;/em&gt;, &lt;a href=&quot;https://eprint.iacr.org/2005/279.pdf&quot;&gt;“Efficient reduction of
+1 out of n oblivious transfers in random oracle
+model”&lt;/a&gt;.&amp;nbsp;&lt;a href=&quot;#fnref:oblivious-transfer&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:twtw&quot;&gt;
+
+      &lt;p&gt;I learned about boolean circuits for addition from David Macaulay’s
+1988 children’s book, &lt;a href=&quot;https://en.wikipedia.org/wiki/The_Way_Things_Work&quot;&gt;“The Way Things Work”&lt;/a&gt;, which
+illustrates everything with the help of a herd of friendly woolly
+mammoths. Honestly I think it’s a fantastic book for curious people
+of all ages. Apparently there have been two newer editions since the
+version I read as a child, if you’re concerned about the book’s
+relevance thirty years later.&amp;nbsp;&lt;a href=&quot;#fnref:twtw&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:or-xor&quot;&gt;
+
+      &lt;p&gt;There are several combinations of gates that can work to implement a
+full adder. Wikipedia shows the two AND gates being combined with an
+OR gate to produce the carry output. However, one of the AND gates
+computes A AND B, while the other has an input from A XOR B. Since
+those can’t both be 1 at the same time, the inputs to the OR gate
+also can’t both be 1 at the same time, so in this case OR and XOR
+will produce the same result.&amp;nbsp;&lt;a href=&quot;#fnref:or-xor&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:microoptimize-xor&quot;&gt;
+
+      &lt;p&gt;In a digital comparator where one operand is constant, the total
+number of XOR gates depends on several factors. If the left-hand
+side is constant, then the number of XOR gates is twice the number
+of 0 bits. If the right-hand side is constant, the number of XOR
+gates is twice the number of 1 bits, plus the number of 0 bits.&lt;/p&gt;
+
+      &lt;p&gt;If you wanted to micro-optimize this circuit, you could note that on
+integers, A&amp;lt;B is equivalent to either NOT (B-1&amp;lt;A) or NOT
+(B&amp;lt;A+1). That means that if the constant is the left-hand operand
+you can swap it to the right, or vice versa, for the cost of an
+additional XOR gate.&lt;/p&gt;
+
+      &lt;p&gt;Of course this is not worth doing, because in this system, XOR gates
+are basically free compared to AND gates. But I spent so much time
+thinking about this useless micro-optimization that, gosh darn it,
+I’m at least allowed to put it in a footnote.&amp;nbsp;&lt;a href=&quot;#fnref:microoptimize-xor&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:uniform-xor&quot;&gt;
+
+      &lt;p&gt;This protocol for generating a random bit struck me as the obvious
+thing to do, and simultaneously as way too easy for it to possibly
+be correct. It wasn’t at all obvious to me that the XOR of a bunch
+of uniform random bits would still be uniform random, or that a
+malicious participant couldn’t influence the result one way or the
+other. Fortunately my friend Joe Ranweiler dug up the perfect
+Mathematics Stack Exchange answer for this question: &lt;a href=&quot;https://math.stackexchange.com/a/441990&quot;&gt;“How to prove
+uniform distribution of m⊕k if k is uniformly
+distributed?”&lt;/a&gt; That proof shows that as long as at
+least one participant generates their bit uniformly at random, it
+doesn’t matter what anyone else does: the result will still be a
+uniform random number.&amp;nbsp;&lt;a href=&quot;#fnref:uniform-xor&quot; class=&quot;reversefootnote&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name>Jamey Sharp</name></author><summary type="html">Please pick a number between 1 and 10, and don’t tell anybody what you picked.</summary></entry><entry><title type="html">c2rust vs Corrode</title><link href="https://jamey.thesharps.us/2018/06/30/c2rust-vs-corrode/" rel="alternate" type="text/html" title="c2rust vs Corrode" /><published>2018-06-30T22:57:00-07:00</published><updated>2018-06-30T22:57:00-07:00</updated><id>https://jamey.thesharps.us/2018/06/30/c2rust-vs-corrode</id><content type="html" xml:base="https://jamey.thesharps.us/2018/06/30/c2rust-vs-corrode/">&lt;p&gt;A couple weeks ago, &lt;a href=&quot;https://galois.com/&quot;&gt;Galois&lt;/a&gt; and &lt;a href=&quot;https://immunant.com/&quot;&gt;Immunant&lt;/a&gt; launched &lt;a href=&quot;https://c2rust.com/&quot;&gt;c2rust&lt;/a&gt;. Since I wrote one of the best-known C-to-Rust translation tools (&lt;a href=&quot;https://github.com/jameysharp/corrode&quot;&gt;Corrode&lt;/a&gt;), and since I worked for Galois before I started working on Corrode, I’ve had a number of people asking what I think of this new project.&lt;/p&gt;
+
+&lt;p&gt;In short: I have very mixed feelings about it.&lt;/p&gt;
+
+&lt;p&gt;First, the positives:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;While I haven’t looked very carefully at c2rust, at a quick glance it looks like another good example of the high-quality engineering work I expect from Galois.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;I plan to deprecate Corrode and encourage people to work with c2rust instead. It’s probably the best choice today for your first steps for translating C projects to Rust.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;That said, I’m not pleased about the story behind how c2rust came to exist.&lt;/p&gt;
+
+&lt;p&gt;I started working on Corrode in mid-2016. Initially I was just curious if such a thing could work at all, but by the end of that year I had a three month contract from Mozilla that enabled me to develop it further. With Mozilla’s support, I proved that the only real limits were around translating certain “features” of C that Rust didn’t provide. (Some of those are now supported, so &lt;a href=&quot;https://github.com/immunant/c2rust/blob/master/docs/known-limitations.md&quot;&gt;there’s very little C that doesn’t have a direct translation to Rust today&lt;/a&gt;.) More importantly, I demonstrated that Corrode was a useful part of the story for &lt;a href=&quot;/2016/12/09/how-to-translate-large-c-project-to-rust/&quot;&gt;how to translate a large C project to Rust&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;In January 2017, I heard from some of my friends at Galois that following Mozilla’s funding, my results had caught Galois’ attention, and they had an idea for how to apply Corrode in a research project they were doing. It was, and is, a cool project! A web search for contract number “FA8750-15-C-0124” will find you some of the published results, including c2rust itself, since they all legally have to acknowledge who funded them. From public sources referencing that contract number, such as &lt;a href=&quot;http://michaelfranz.com/cv.pdf&quot;&gt;Michael Franz’ CV&lt;/a&gt;, you can also discover that:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;The contract is named &lt;a href=&quot;https://galois.com/project/radss/&quot;&gt;Robust, Assured Diversity for Software Systems (RADSS)&lt;/a&gt; and is funded by &lt;a href=&quot;https://www.darpa.mil/program/cyber-fault-tolerant-attack-recovery&quot;&gt;DARPA’s Cyber Fault-tolerant Attack Recovery (CFAR)&lt;/a&gt; program.&lt;/li&gt;
+  &lt;li&gt;The &lt;a href=&quot;https://galois.com/news/galois-awarded-10m-darpa-contract-make-legacy-systems-secure/&quot;&gt;original contract was for US$10 million&lt;/a&gt;, split among several companies and UC Irvine. However, the contract was extended last August, increasing the amount awarded to UC Irvine by 11%; I can only guess how much went to the other contractors.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Galois proposed to sub-contract with me over the 17 months of this extended contract, which would have been a huge deal for me as a self-employed independent contractor. They wanted me to improve C-to-Rust translation for use in RADSS, which I still think is a promising idea.&lt;/p&gt;
+
+&lt;p&gt;It took six months before Galois could finally give me a contract for my lawyer to review. I believe much of that delay was at DARPA due to the change in presidential administration, and anyway I know it’s not uncommon for these things to get dragged out in the best of situations. Unfortunately, during that interval I was declining other work based on the expectation that this contract would be taking a significant fraction of my time—a mistake, in hindsight.&lt;/p&gt;
+
+&lt;p&gt;Meanwhile, I continued to work on Corrode, but discovered that I was hitting a wall due to early design choices I had made. So I started putting my time into figuring out what a “Corrode version 2” would look like if I started from scratch. As Galois started gearing up to work on the new contract, I had a video call with maybe 6-8 people there where I explained that I thought the existing Corrode code base was a dead end and we should build this new tool I envisioned.&lt;/p&gt;
+
+&lt;p&gt;When I finally got to see my contract, including all the pass-through terms required by DARPA, it turned out that there was no way I could sign it.&lt;/p&gt;
+
+&lt;p&gt;For most contracts, including this one, DARPA requires a wide range of standardized contract terms, including “publication review”. If you want to say anything in public about your work under the contract, somebody at DARPA needs to review what you’re going to say first. (This is &lt;a href=&quot;https://www.acq.osd.mil/dpap/dars/dfars/html/r20130930/252204.htm&quot;&gt;DFAR 252.204-7000&lt;/a&gt; if you want to read the exact terms I would have been subject to.) I assume this is based on some fear that a contractor will accidentally leak classified information, or something; I’m not sure how often DARPA rejects an information disclosure, or why.&lt;/p&gt;
+
+&lt;p&gt;The important thing is that publication review even applies to every &lt;code class=&quot;highlighter-rouge&quot;&gt;git push&lt;/code&gt; to a public repository. I’m told that publication review can take up to a month, and anyway of course there’s no guarantee they’ll allow it. So any software project subject to these terms can’t possibly be governed as an open source project. The contractor can make the source code public when they’re done with the project, as Galois &lt;em&gt;et al&lt;/em&gt; have recently done with c2rust, but practically speaking it’s impossible to involve a wider community during the development process.&lt;/p&gt;
+
+&lt;p&gt;Once I understood the contract terms, I tried to find a way around them. I already had a small but active open source community around Corrode, and to me, it was critical to be able to keep them involved. (It’s worth noting that the most prolific contributor to Corrode got hired at Galois during this period and went on to make significant contributions to c2rust, so at least one person got to stay involved.)&lt;/p&gt;
+
+&lt;p&gt;Legally speaking, since I’d argued that the project should be a from-scratch rewrite, c2rust is not a derived work of Corrode in the copyright sense, and of course I hadn’t filed any patents that could be infringed. So from the perspective of Galois’ lawyer, there was nothing to negotiate: the project would happen under DARPA’s terms, which Galois had already agreed to, or it would not happen at all.&lt;/p&gt;
+
+&lt;p&gt;From my point of view, on the other hand, I was being asked to work on software that would replace my existing GPL work, without leaving me any way to support my existing community. Because of the publication review terms, I would not even be able to speak at conferences or write blog posts about any new work I did. And although I trusted that Galois intended to publish the source code on completion, I couldn’t count on DARPA permitting it, and Galois couldn’t make any promises in my contract. I knew if I spent a year working on this project and then found out that it was going to be kept in-house forever, I would feel that my project and my effort had been stolen from me, no matter how much I got paid in the meantime.&lt;/p&gt;
+
+&lt;p&gt;So I refused. The project lead accepted my reasons and suggested that perhaps I could give them private tech talks about what I’d learned while working on Corrode, which they’d pay me some small amount for out of their overhead budget so it wouldn’t be tied to DARPA’s contract terms. As a consolation prize it wasn’t much of an offer, and I got exhausted just thinking about the effort involved in putting together useful presentations on that topic, so I didn’t do that either.&lt;/p&gt;
+
+&lt;p&gt;I didn’t hear anything further about the project until a couple weeks ago when c2rust.com went public.&lt;/p&gt;
+
+&lt;p&gt;Architecturally, c2rust looks exactly like what I planned for a from-scratch rewrite of Corrode, and the engineers clearly learned a lot from my work. This is not surprising, since I told them this is what they should build, and their &lt;a href=&quot;https://github.com/immunant/c2rust/wiki/Initial-development-plan&quot;&gt;initial development plan&lt;/a&gt; and early commit history talk about Corrode.&lt;/p&gt;
+
+&lt;p&gt;What &lt;em&gt;is&lt;/em&gt; surprising is that none of the documentation acknowledges any prior work. Not my own work, and not ideas like Emscripten’s “Relooper” algorithm either. The Relooper algorithm was critical for &lt;a href=&quot;/2017/04/06/corrode-update-control-flow-translation/&quot;&gt;Corrode’s support for arbitrary C control flow&lt;/a&gt;, and c2rust followed my example there too. I’m optimistically hoping that the missing acknowledgements are just held up by DARPA publication review, and will quietly appear in the next few weeks.&lt;/p&gt;
+
+&lt;p&gt;So I’ll say it again: While I personally have very mixed feelings about how c2rust came about, it &lt;em&gt;is&lt;/em&gt; the tool I asked for, and probably the best tool to use instead of Corrode going forward.&lt;/p&gt;
+
+&lt;p&gt;Of course, there’s plenty of work to do yet, just like there was with Corrode. There are still &lt;a href=&quot;https://github.com/immunant/c2rust/blob/master/docs/known-limitations.md&quot;&gt;known limitations of c2rust&lt;/a&gt;. And just like with Corrode, the output of c2rust is not usually idiomatic or safe. Glancing at some examples of c2rust output, I can see so many improvements that I could automate, given the time, but I can’t afford to work on these projects in my spare time at this point.&lt;/p&gt;
+
+&lt;p&gt;I am, however, still available as a contract developer. If you need someone who can apply computer science theory to practical engineering problems, and who can produce a prototype that DARPA thinks is worth a big pile of money, hit me up at &lt;a href=&quot;mailto:jamey@appliedrefinement.com&quot;&gt;jamey@appliedrefinement.com&lt;/a&gt;.&lt;/p&gt;</content><author><name>Jamey Sharp</name></author><summary type="html">A couple weeks ago, Galois and Immunant launched c2rust. Since I wrote one of the best-known C-to-Rust translation tools (Corrode), and since I worked for Galois before I started working on Corrode, I’ve had a number of people asking what I think of this new project.</summary></entry><entry><title type="html">How not to replace email</title><link href="https://jamey.thesharps.us/2018/02/16/how-not-to-replace-email/" rel="alternate" type="text/html" title="How not to replace email" /><published>2018-02-16T23:32:04-08:00</published><updated>2018-02-16T23:32:04-08:00</updated><id>https://jamey.thesharps.us/2018/02/16/how-not-to-replace-email</id><content type="html" xml:base="https://jamey.thesharps.us/2018/02/16/how-not-to-replace-email/">&lt;p&gt;As of a month ago, the &lt;a href=&quot;https://incubator.apache.org/projects/wave.html&quot;&gt;Apache
+Wave&lt;/a&gt; project is
+“retired”. Few people noticed; in the seven years that Wave was an
+Apache Incubator open source project, it never had an official release,
+and was stuck at version 0.4-rc10 for the last three years.&lt;/p&gt;
+
+&lt;p&gt;Before being handed off to Apache in 2011, Wave was a Google product,
+first announced in 2009. Google made Wave fully accessible to the public
+in May of 2010, but announced they would no longer be developing it just
+three months later.&lt;/p&gt;
+
+&lt;p&gt;2017 was a year of rapidly growing interest in federated communications
+tools such as &lt;a href=&quot;https://joinmastodon.org/&quot;&gt;Mastodon&lt;/a&gt;, which is an
+alternative to Twitter that doesn’t rely on a single central
+corporation. So this seems like a good time to revisit an early
+federated attempt to reinvent how we use the internet to communicate
+with each other.&lt;/p&gt;
+
+&lt;p&gt;Responding to the announcement that Wave is now officially retired, my
+friend &lt;a href=&quot;https://what.happens.when.computer/&quot;&gt;Getty Ritter&lt;/a&gt; wrote in a
+private Slack (quoted by permission):&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;I was one of about four people who thought that Wave would have been a
+good project if only they didn’t oversell it and also if it had been,
+like, not Google.&lt;/p&gt;
+
+  &lt;p&gt;We used Wave for project planning in creating a video game back in the
+day, and it was &lt;em&gt;perfect&lt;/em&gt; for that, but not for any of the reasons
+they advertised or were proud of. We didn’t care about the cool live
+editing algorithms, but having this sort of nice rich media
+environment that permitted a hybrid messages and collaborative editing
+environment was great. We’d start sending messages with lots of
+diagrams, sketches, and stuff cribbed from Google Images, and then be
+able to turn those sort of longer-than-IM-shorter-than-email messages
+into actual design documents gradually.&lt;/p&gt;
+
+  &lt;p&gt;In fact, I’d argue that even having a system that’s a messaging system
+designed for “a paragraph or two” was on its own worthwhile: even
+Slack isn’t &lt;em&gt;quite&lt;/em&gt; geared toward that, and contrariwise, email […]
+felt more heavyweight than that. Wave &lt;em&gt;felt&lt;/em&gt; like it encouraged the
+right amount of information per message.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Getty’s description gets at some of the issues I have with existing
+tools when trying to collaborate on a project with other people.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;I desperately want tool support for taking unstructured thoughts and
+ideas, and incrementally and collaboratively transforming them into
+coherent documents. I believe every task in a group project follows
+this pattern.&lt;/p&gt;
+
+    &lt;p&gt;For example, in a software project, any bug report starts with scraps
+of information, posted in IRC or on Twitter or buried in the middle of
+a seemingly-unrelated mailing list message. I see the process of
+resolving the bug as mostly about collecting all those pieces of
+evidence into a coherent story.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Human communications is literally not one-size-fits-all. When someone
+wants to explore a problem or a new idea, they need an easy way to
+just start chatting with potential collaborators about it; at that
+stage, short messages like in Slack or Twitter or IRC are perfect. But
+if the idea goes anywhere, those short messages need to coalesce into
+larger units of thought: first “a paragraph or two”, and eventually
+whole blog posts or design documents or other artifacts whose purpose
+is to convey the most important parts of the idea to people who
+weren’t involved in the original conversation.&lt;/p&gt;
+
+    &lt;p&gt;No one technology today spans this range. Instead we switch between
+instant messaging and email and Google Docs and wikis and &lt;code class=&quot;highlighter-rouge&quot;&gt;git&lt;/code&gt;, none
+of which really play nicely with each other, and we lose history at
+every step. Wave was explicitly an attempt to unify all those tools.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;To me, it’s pretty clear why someone might want a tool like Wave just
+based on the above points. But wait, there’s more!&lt;/p&gt;
+
+&lt;p&gt;From a technology perspective, Wave was built around two key ideas that
+it’s hard to imagine Google, as we know it in 2018, would pursue.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;Wave acknowledged that communications via the internet can be delayed
+enough that humans will notice.&lt;/p&gt;
+
+    &lt;p&gt;These days every Google product seems to assume that your internet
+connection is always on, that you’re close enough to the nearest
+Google server that your brain won’t notice the speed-of-light delay,
+and that you have practically unlimited bandwidth. These assumptions
+are barely true in Mountain View, let alone in most of the rest of the
+world.&lt;/p&gt;
+
+    &lt;p&gt;The first key technology underpinning Wave was “&lt;a href=&quot;https://en.wikipedia.org/wiki/Operational_transformation&quot;&gt;Operational
+Transformation&lt;/a&gt;”
+(OT), and it allowed people to edit documents together in real time
+even though their connections to each other might be slow and
+unreliable.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;More surprisingly, Wave was explicitly designed to keep Google from
+being the sole central authority.&lt;/p&gt;
+
+    &lt;p&gt;They released sample implementations under open source licenses,
+encouraged others to run their own Wave servers independent of Google
+infrastructure, and defined a federation protocol (on top of
+Jabber/&lt;a href=&quot;https://en.wikipedia.org/wiki/XMPP&quot;&gt;XMPP&lt;/a&gt;) so that people on
+different servers could still talk with each other.&lt;/p&gt;
+
+    &lt;p&gt;This seems weird, a decade later, when Google and Facebook are each
+trying to get everyone into their walled gardens so they can serve ads
+to you.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;I often find myself disheartened when I see situations like this: that
+the Wave project tried to tackle these problems almost a decade ago, and
+failed. But rather than giving up, let’s try to learn some lessons from
+that failure. Why aren’t we all using Wave today?&lt;/p&gt;
+
+&lt;p&gt;The day after Google announced they were ending development on Wave,
+staffers at Ars Technica wrote “&lt;a href=&quot;https://arstechnica.com/information-technology/2010/08/google-wave-why-we-didnt-use-it/&quot;&gt;Google Wave: why we didn’t use
+it&lt;/a&gt;”,
+a post-mortem which reads much like the analysis of many other failed
+technologies. To summarize:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;The initial implementation was a JavaScript-heavy web application in
+an era when people weren’t used to that. Browsers weren’t optimized to
+run so much code and so the user experience was terrible: one Ars
+staffer reported that he gave up when Safari ground to a halt trying
+to load the Wave site.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Google’s interface design aesthetic for Wave was the old-school
+“Multiple Document Interface” (MDI), rarely seen these days (&lt;a href=&quot;https://web.archive.org/web/20080530025541/http://pixelcentric.net/x-shame/docs.html&quot;&gt;for good
+reason&lt;/a&gt;).
+An Ars staffer wrote that this “made it ugly and initially confusing
+for even the savviest of users.”&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Both of those would have been recoverable problems, especially because
+Google’s web interface was intended to be just one of many. If a
+variety of Wave-compatible apps had materialized, people could have
+just chosen the ones that worked better. Unfortunately, the Wave
+protocol was complex, so the few implementations that eventually
+appeared came from big companies like Novell and SAP, who only cared
+about the enterprise market.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Assuming you could stand Wave’s interface, it’d still be useless
+unless the people you wanted to communicate and collaborate with were
+also using it. Wave was intended to completely replace existing
+systems like email and chat, so it had no provisions for
+interoperating with those systems. To succeed, Wave required a
+revolution, a critical mass of people switching to the new way and
+dragging the rest of the world with them—and those haven’t worked out
+very often.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Making the revolution even more unlikely, initially Google offered
+Wave accounts by invitation only, so the people you wanted to talk
+with probably couldn’t even get an account.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;In the end, Wave failed because it was designed assuming everyone would
+agree to switch to it, but at its launch it had too many issues keeping
+it from getting enough momentum to reach that critical mass.&lt;/p&gt;
+
+&lt;p&gt;Okay, I think that’s actually quite a hopeful conclusion! Because here’s
+the good news:&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Wave’s failure didn’t have anything to do with the ideas that went into
+it.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;Those ideas and goals are sound, and this failure even provided good
+evidence that there’s a real need for something kind of like Wave: fifty
+thousand people signed a petition to “Save Google Wave” after Google
+announced they were shutting Wave down. Like so many petitions, it
+didn’t help (obviously), but if a mediocre implementation got tens of
+thousands of passionate fans, what could a good implementation do?&lt;/p&gt;
+
+&lt;p&gt;I’d say the single most important lesson to take away here, for a
+technology project at least, is that interoperability is key.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Assume that no matter how amazing your new tech is, people are going
+to adopt it slowly.&lt;/li&gt;
+  &lt;li&gt;Give your early adopters every chance you can to use your offering
+&lt;em&gt;together&lt;/em&gt; with the existing tools that they will continue to need in
+order to work with people who haven’t caught up yet.&lt;/li&gt;
+  &lt;li&gt;And if you’re building a communication tool, make it as simple as
+possible for others to build compatible tools, because they will
+expand the network of people your users can communicate with to
+populations you haven’t thought of and probably don’t understand.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;As a final thought, I’d like to briefly describe three projects I’ve
+worked on that I think embodied this principle well.&lt;/p&gt;
+
+&lt;p&gt;My most widely used open source project,
+&lt;a href=&quot;https://xcb.freedesktop.org/&quot;&gt;XCB&lt;/a&gt;, was initially intended to be
+revolutionary. XCB completely replaces Xlib, a C library dating back to
+1987, which had accumulated so much cruft that at one point it had an
+entire color management system which was literally unusable because if
+you ever called its initialization function, it would immediately
+crash—and nobody noticed that bug for six months. XCB is in no way
+compatible with Xlib: initially we thought that people would be excited
+to rewrite their code rather than deal with Xlib any longer. That has
+actually been kind of vaguely true, which mostly goes to show how much
+of a mismatch Xlib is for modern use cases. But XCB really only took off
+after &lt;a href=&quot;https://www.usenix.org/legacy/events/usenix04/tech/freenix/sharp.html&quot;&gt;we rewrote a core part of Xlib to use XCB
+internally&lt;/a&gt;,
+and allowed developers to mix and match calls to both libraries in the
+same application. Now the XCB-based Xlib is used in basically every X
+Window System installation, on every OS—Linux, BSD, Solaris,
+Windows, etc—which means that odds are good that you’ve used
+software that I’ve written.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://www.comic-rocket.com/&quot;&gt;Comic Rocket&lt;/a&gt; is a site my friends and I
+built for helping people discover, read, and follow their favorite
+webcomics. One of my early design decisions was that Comic Rocket would
+not host any comics itself; instead it acts more like a feed aggregator
+or a search engine for webcomics. I knew that no matter how good of a
+job I might do at building tools for creators to publish their comics,
+I’d never convince everyone to switch to my platform. Through careful
+architecture decisions and a very clever web-crawler (if I do say so
+myself), Comic Rocket is able to provide bookmarking and update
+notifications for comics no matter where they’re hosted on the web.
+Because its features enhance readers’ experience without any effort from
+the creators, it has become popular enough among webcomic readers to in
+turn be a significant source of traffic for creators, and everyone wins.&lt;/p&gt;
+
+&lt;p&gt;Mozilla’s &lt;a href=&quot;https://www.rust-lang.org/&quot;&gt;Rust&lt;/a&gt; is sometimes put on a
+pedestal as a revolutionary programming language, with a few
+over-zealous proponents pestering all sorts of projects with arguments
+that they should rewrite all their software in Rust. (It’s unfair to
+call Rust revolutionary, though, simply because they’ve put so much work
+into compatibility and FFI.) To be honest, I’m fully in favor of that
+idea: I would love to see all the world’s C and C++ software rewritten
+in Rust, using Rust’s compiler-enforced safety features to discover and
+fix many lurking bugs and crashes. Of course, as I’ve written about
+before, there are plenty of &lt;a href=&quot;/2017/01/03/which-projects-should-convert-to-rust/&quot;&gt;reasons why people shouldn’t rewrite
+everything in Rust&lt;/a&gt;.
+One major reason is that a by-hand rewrite is error-prone and likely to
+introduce new bugs. That’s why I started writing
+&lt;a href=&quot;https://github.com/jameysharp/corrode&quot;&gt;Corrode&lt;/a&gt;, a fully automatic C to
+Rust translator. Building automatic tools to migrate from the old way to
+your awesome new way significantly reduces the barriers for getting
+people to switch. If Corrode (or any of the other similar tools people
+have written) were complete, then developers and managers could no
+longer object to using Rust solely on the grounds that all their
+existing code is in C. They’d be left with other good reasons, like that
+none of their team knows Rust, or that their static analysis tools only
+work on C, but each of those objections can be addressed given time.
+Creating a solid transition plan makes adoption significantly more
+likely.&lt;/p&gt;
+
+&lt;p&gt;To sum up: Google Wave tackled real problems, but failed because it
+relied on a revolution that never happened, which is the outcome you
+should expect for any technology project that expects everyone to switch
+to it right away. Would somebody please try again but with less hubris
+this time?&lt;/p&gt;
+
+&lt;h2 id=&quot;follow-ups&quot;&gt;Follow-ups&lt;/h2&gt;
+
+&lt;p&gt;&lt;strong&gt;Edit:&lt;/strong&gt; In response to the above, &lt;a href=&quot;https://twitter.com/samerP2P&quot;&gt;Samer
+Hassan&lt;/a&gt; told me &lt;a href=&quot;https://twitter.com/samerP2P/status/965223957627572224&quot;&gt;via
+Twitter&lt;/a&gt;:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;FYI, we forked Wave, dropping its terrible interface &amp;amp; rebuilding it
+into a backend-as-a-service to build collaborative apps relying on its
+decentralized protocol: &lt;a href=&quot;https://en.wikipedia.org/wiki/SwellRT&quot;&gt;https://en.wikipedia.org/wiki/SwellRT&lt;/a&gt; &amp;amp; now
+&lt;a href=&quot;https://twitter.com/pablojan&quot;&gt;@pablojan&lt;/a&gt; working on
+&lt;a href=&quot;http://jetpad.net&quot;&gt;http://jetpad.net&lt;/a&gt; on top of it&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;I haven’t looked very carefully at SwellRT but I took a quick glance
+through its documentation and it sure looks… er, swell! If you’re
+interested in building real-time collaborative applications, check out
+&lt;a href=&quot;http://swellrt.org/&quot;&gt;SwellRT&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Also, there was remarkably good discussion of this post over at &lt;a href=&quot;https://news.ycombinator.com/item?id=16404452&quot;&gt;Hacker
+News&lt;/a&gt;. A few brief
+responses:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;Arathorn commented, “A lot of Matrix.org is inspired by what Wave
+could have been”, which seems plausible; keep at it, folks!&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;peoplewindow commented, “There seems to be some historical revisionism
+here. … no, when Wave came out people were very much used to crappy
+web apps.” I was trying to summarize what people at the time said were
+Wave’s problems, so it certainly wasn’t intentional historical
+revisionism, but I may well have mis-characterized them. I did link to
+the original piece if you’d like to read what some of Wave’s users
+actually said at the time.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;The author of &lt;a href=&quot;https://www.amazon.com/Why-We-Fail-Learning-Experience/dp/1933820179&quot;&gt;Why We Fail: Learning from Experience Design
+Failures&lt;/a&gt;
+says he included a case study of Wave’s failure. I haven’t read the
+book but if you’re looking for more perspectives on this story you
+could check it out.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;sam_goody commented, “Careful what you wish for, you may get it…
+Mail AMP is a Google controlled superset of email.” Funny you should
+mention that! I was already considering how to approach a follow-up
+about the AMP project’s recently-proposed
+&lt;a href=&quot;https://github.com/ampproject/amphtml/issues/13457&quot;&gt;amp4email&lt;/a&gt;,
+why I think it’s a bad idea (like many other people who have already
+written insightful things about it), and what I would propose instead.
+I just haven’t quite got a grip on how to frame that post yet.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Thanks for the good feedback, folks!&lt;/p&gt;</content><author><name>Jamey Sharp</name></author><category term="collaboration" /><category term="software engineering" /><category term="tech philosophy" /><summary type="html">As of a month ago, the Apache Wave project is “retired”. Few people noticed; in the seven years that Wave was an Apache Incubator open source project, it never had an official release, and was stuck at version 0.4-rc10 for the last three years.</summary></entry><entry><title type="html">Search-based compiler code generation</title><link href="https://jamey.thesharps.us/2017/06/19/search-based-compiler-code-generation/" rel="alternate" type="text/html" title="Search-based compiler code generation" /><published>2017-06-19T00:49:00-07:00</published><updated>2017-06-19T00:49:00-07:00</updated><id>https://jamey.thesharps.us/2017/06/19/search-based-compiler-code-generation</id><content type="html" xml:base="https://jamey.thesharps.us/2017/06/19/search-based-compiler-code-generation/">&lt;p&gt;I’ve been thinking about something for a while now, and promised a year
+ago in my &lt;a href=&quot;/2016/05/24/optimal-optimization/&quot;&gt;Optimal
+Optimization&lt;/a&gt;
+post that I would write it up.&lt;/p&gt;
+
+&lt;p&gt;One of the difficulties in writing a programming language compiler is
+that there is a tension between making the pieces of the compiler
+modular and maintainable, versus making the compiler produce good code.
+The biggest cause of this tension is over “phase ordering”, and I’ll
+defer to one of the many academic papers on the subject to explain it:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Current optimizing compilers typically contain several different
+optimization phases. Each phase attempts to apply a series of
+transformations, each of which consists of a sequence of changes that
+preserves the semantic behavior of the program while typically
+improving its efficiency. Many of these optimization phases use and
+share resources (such as machine registers), and also need specific
+conditions in the code to be applicable. As a result, optimization
+phases interact with each other by enabling and disabling
+opportunities for other phases to be applied. (Prasad Kulkarni &lt;em&gt;et
+al&lt;/em&gt;, “&lt;a href=&quot;http://www.cs.fsu.edu/~whalley/papers/taco09.pdf&quot;&gt;Practical Exhaustive Optimization Phase Order Exploration and
+Evaluation&lt;/a&gt;”)&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Researchers have explored a variety of ways to determine, for a given
+piece of source code, which passes should be applied and in what order.
+The above paper, and several others by the same authors, describe
+efficient ways to search over all possible phase orders. Many people
+have applied genetic algorithms or machine learning techniques to this
+problem as well; for an interesting example plus good citations to
+earlier work, see Sameer Kulkarni &amp;amp; John Cavazos, “&lt;a href=&quot;https://www.eecis.udel.edu/~cavazos/oopsla-2012.pdf&quot;&gt;Mitigating the
+Compiler Optimization Phase-Ordering Problem using Machine
+Learning&lt;/a&gt;”.&lt;/p&gt;
+
+&lt;p&gt;But you might ask, why do we divide the compiler’s work into phases in
+the first place? It’s in support of our old software engineering friend:
+abstraction. It’s much easier to reason about a particular
+transformation if we don’t have to think about all of the others at the
+same time.&lt;/p&gt;
+
+&lt;p&gt;Still, could we avoid the phase order problem entirely by structuring
+the compiler in some other way?&lt;/p&gt;
+
+&lt;h2 id=&quot;strongly-normalizing-intermediate-representations&quot;&gt;Strongly normalizing intermediate representations&lt;/h2&gt;
+
+&lt;p&gt;Alan C. Lawrence, in his 2007 PhD thesis (“&lt;a href=&quot;https://www.cl.cam.ac.uk/techreports/UCAM-CL-TR-705.pdf&quot;&gt;Optimizing compilation with
+the Value State Dependence
+Graph&lt;/a&gt;”),
+claimed a maxim of compiler folklore is that “The most optimizing
+compiler is the most normalizing compiler,” explaining it this way:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Normalization refers to where many different source programs result in
+the same machine code after compilation—that is, where the same
+machine code is produced regardless of which form was written by the
+programmer. … This allows the programmer to select from such
+representations according to which is the easiest to comprehend or to
+fit his ideas or program into, and leave the compiler to select the
+output according to efficiency concerns.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Traditionally, compilers have represented the structure of a function
+using a &lt;a href=&quot;https://en.wikipedia.org/wiki/Control_flow_graph&quot;&gt;Control Flow
+Graph&lt;/a&gt; (CFG) composed
+of “basic blocks” containing sequential instructions, plus control-flow
+edges between basic blocks that describe the different paths the program
+may follow.&lt;/p&gt;
+
+&lt;p&gt;The CFG representation locks in details of evaluation order that aren’t
+inherent in the original program, so many optimizations that are
+designed for CFGs just re-order instructions in various ways. Different
+orderings may have different performance or code size implications, so
+the challenge is to identify the best ordering for your particular
+goals.&lt;/p&gt;
+
+&lt;p&gt;By contrast, the Value State Dependence Graph (VSDG) does not force
+instructions into a sequential order, but instead keeps track of data
+dependencies and serialization requirements using directed edges in a
+graph. As a result, a VSDG describes all equivalent orderings of the
+same code in a single, normalized, form. (Other program representations
+have done that for parts of the code that are free of side effects, but
+VSDG extends it to control flow and memory access.)&lt;/p&gt;
+
+&lt;p&gt;Lawrence later noted:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Many optimizations, which would be separate passes in a CFG compiler,
+seem trivial in a VSDG framework, due to the VSDG’s normalizing
+properties. That is, they automatically (or implicitly) occur merely
+by representing a program as a VSDG.&lt;/p&gt;
+
+  &lt;p&gt;However, this does not entirely avoid the problem: rather, it merely
+delays the decision until the IR is transformed into some form which
+does make the distinction, namely until the sequentialization stage.
+Thus, sequentialization wraps up many such optimizations together, and
+concentrates their difficulty into one place. However, this approach
+&lt;em&gt;does&lt;/em&gt; seem helpful in addressing phase-order problems…&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Although a single VSDG can represent a large number of
+seemingly-different CFGs, it is possible to reduce the number of
+equivalent CFGs just by adding extra serializing edges. The edges
+initially present in the graph represent true dependencies: &lt;em&gt;A&lt;/em&gt; must be
+evaluated before &lt;em&gt;B&lt;/em&gt;, either because &lt;em&gt;B&lt;/em&gt; needs the result of &lt;em&gt;A&lt;/em&gt;, or
+because &lt;em&gt;A&lt;/em&gt; and &lt;em&gt;B&lt;/em&gt; have side effects that must not be re-ordered.
+Artificially adding more dependencies imposes a specific evaluation
+order for the remaining computations.&lt;/p&gt;
+
+&lt;p&gt;The VSDG sequentialization stage can be defined as introducing
+serializing edges until exactly one CFG remains. Producing a
+sequentialization optimized for speed is NP-complete, but because the
+only choices are over where to add serializing edges, the VSDG is a
+convenient way to express whatever constraints, heuristics, or cost
+functions you want.&lt;/p&gt;
+
+&lt;p&gt;Although Lawrence’s thesis discusses sequentialization extensively, if
+you want to know more on that subject I recommend James Stanier’s 2011
+PhD thesis (“&lt;a href=&quot;http://sro.sussex.ac.uk/7576/1/Stanier,_James.pdf&quot;&gt;Removing and Restoring Control Flow with the Value State
+Dependence Graph&lt;/a&gt;”)
+as well as Bahmann &lt;em&gt;et al&lt;/em&gt;’s 2015 paper, “&lt;a href=&quot;https://www.researchgate.net/profile/Nico_Reissmann/publication/271723114_Perfect_Reconstructability_of_Control_Flow_from_Demand_Dependence_Graphs/links/5767ebc208ae421c448dd1ff.pdf&quot;&gt;Perfect Reconstructability of
+Control Flow from Demand Dependence
+Graphs&lt;/a&gt;”.&lt;/p&gt;
+
+&lt;h2 id=&quot;combined-register-allocation-and-code-motion&quot;&gt;Combined Register Allocation and Code Motion&lt;/h2&gt;
+
+&lt;p&gt;Neil Johnson, in chapter 6 of his 2004 PhD thesis (“&lt;a href=&quot;https://www.cl.cam.ac.uk/techreports/UCAM-CL-TR-607.pdf&quot;&gt;Code Size
+Optimization for Embedded
+Processors&lt;/a&gt;”),
+proposed an elegant algorithm for combining a particular pair of
+traditionally-separate optimization passes using the VSDG, which makes a
+nice example of both the phase ordering problem and the ways VSDG can
+help solve it.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://en.wikipedia.org/wiki/Register_allocation&quot;&gt;Register allocation&lt;/a&gt;
+is the process of assigning temporary values to specific hardware
+registers. Sometimes there are too many temporary values that the
+program needs to hang on to at the same time, and they can’t all fit in
+registers at once. When that happens, there are traditionally two
+choices: either “spill” some of the registers to memory so they can be
+used for something else until the older values are needed again; or
+forget some temporary values and recompute them later. Both options
+result in a larger and slower program.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://en.wikipedia.org/wiki/Loop-invariant_code_motion&quot;&gt;Code motion&lt;/a&gt;
+is a loop optimization that moves an expression out of the body of a
+loop if that expression will evaluate to the same value on every
+iteration of the loop. The only way this transformation could make the
+expression be evaluated more times than in the original program is if
+the loop never executes, so this is almost always an improvement.&lt;/p&gt;
+
+&lt;p&gt;However, code motion increases pressure on the register allocator,
+because there are more temporary values that need to be available
+throughout the execution of the loop. Under some circumstances, the
+program will actually be faster if it recomputes the loop-invariant
+expression every time it’s needed, because that may free up registers
+and avoid expensive spills to memory.&lt;/p&gt;
+
+&lt;p&gt;Johnson uses the VSDG to implement a greedy algorithm that only performs
+code motion when it won’t interfere with register allocation. His isn’t
+the first algorithm to combine these two passes, but using VSDG makes
+his approach particularly easy to understand. I recommend reading his
+paper if you’d like to know more.&lt;/p&gt;
+
+&lt;h2 id=&quot;recasting-optimization-as-a-search-problem&quot;&gt;Recasting optimization as a search problem&lt;/h2&gt;
+
+&lt;p&gt;Although several of the VSDG papers mention &lt;a href=&quot;https://en.wikipedia.org/wiki/Combinatorial_search&quot;&gt;combinatorial
+search&lt;/a&gt; as a
+potential solution to various challenges, I have not found any signs
+that anyone has actually tried search with the VSDG. I’d be interested
+to see Johnson’s algorithm, for example, revisited with an exhaustive
+search in place of the greedy policy, and an analysis of the
+compile-time cost versus run-time and code-size benefit of making
+optimal choices.&lt;/p&gt;
+
+&lt;p&gt;There is history of using search in various ways for code optimization:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;I already cited “&lt;a href=&quot;http://www.cs.fsu.edu/~whalley/papers/taco09.pdf&quot;&gt;Practical Exhaustive Optimization Phase Order
+Exploration and
+Evaluation&lt;/a&gt;” as an
+example of using search to identify an optimal phase order for a
+traditional compiler on a given program.&lt;/li&gt;
+  &lt;li&gt;Samuel Sanseri’s 2001 Master’s thesis (“&lt;a href=&quot;http://web.cecs.pdx.edu/~bart/papers/misc/sanseri-ia64.pdf&quot;&gt;Toward An Optimizing JIT
+Compiler For
+IA-64&lt;/a&gt;”)
+demonstrated that for &lt;a href=&quot;https://en.wikipedia.org/wiki/Very_long_instruction_word&quot;&gt;VLIW
+architectures&lt;/a&gt;,
+search-based instruction selection can produce more efficient code
+than GCC’s hand-tuned heuristics. (It also promised to demonstrate
+that it could do so with fast enough compile time to be usable in a
+JIT setting, though I can’t find evidence in the paper that compile
+time was actually measured. Still, I think the claim is plausible.)&lt;/li&gt;
+  &lt;li&gt;João Dias’ 2008 PhD thesis (“&lt;a href=&quot;https://pdfs.semanticscholar.org/4f7d/d2c2a9230ab5d51bd8f5eccfb626baa4d83b.pdf&quot;&gt;Automatically Generating the Back End
+of a Compiler Using Declarative Machine
+Descriptions&lt;/a&gt;”)
+demonstrated using search to automatically generate the instruction
+selector in the backend of a compiler. Although compiler frontend
+techniques haven’t changed dramatically since
+&lt;a href=&quot;https://en.wikipedia.org/wiki/Lex_%28software%29&quot;&gt;lex&lt;/a&gt; and
+&lt;a href=&quot;https://en.wikipedia.org/wiki/Yacc&quot;&gt;yacc&lt;/a&gt; were written in the
+1970s, instruction selection is still done today using extensive
+hand-written heuristics. Dias’ approach replaces those heuristics
+with pattern-matching rules generated before compiling the compiler
+itself, so the slow search time is amortized across all the programs
+compiled for the same architecture.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;These projects demonstrate a range of applications of combinatorial
+search covering both offline analysis used to generate better compilers,
+and online analysis to dynamically make better optimization decisions
+during compilation.&lt;/p&gt;
+
+&lt;p&gt;However, I have yet to find anyone who has tried using search to decide
+whether to apply a optimization/transformation at each individual
+location where it’s valid. Since applying an optimization in a
+particular spot might prevent applying other optimizations in that spot,
+the current greedy methods may produce suboptimal results no matter
+which order they run optimization phases in.&lt;/p&gt;
+
+&lt;p&gt;Here’s a rough outline of an approach that I think would be interesting
+to try:&lt;/p&gt;
+
+&lt;p&gt;Construct a VSDG, and aggressively normalize it using equivalents of
+common subexpression elimination and partial redundancy elimination.
+These are not guaranteed to be a good idea, but they can be selectively
+undone later using node splitting if necessary. Also apply optimizations
+that are guaranteed to be improvements, such as constant folding,
+algebraic identities, and dead node elimination. Furthermore, some
+optimizations, like constant propagation and copy propagation, are
+implicit in VSDG construction (e.g. if there’s no “copy” node
+available).&lt;/p&gt;
+
+&lt;p&gt;Begin a search over the space of VSDGs that may be formed from the
+initial graph using any sequence of these operations:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;first, split some subset of nodes whose results are demanded
+multiple times;&lt;/li&gt;
+  &lt;li&gt;then, fully cover the graph with target machine instructions;&lt;/li&gt;
+  &lt;li&gt;and finally, add serializing edges and spill registers until the
+graph corresponds to a single CFG and all edges can be assigned to
+registers without conflicts.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Evaluate each candidate CFG according to the current optimization
+criteria, such as smallest code size or fastest execution time.&lt;/p&gt;
+
+&lt;p&gt;Although this still looks like a multi-phase optimization pipeline, the
+key difference is that we allow the compiler to backtrack over any
+decision that might turn out to be a bad idea. There may be multiple
+reasonable choices for nodes to split, multiple ways to select target
+machine instructions that compute the same results with different
+tradeoffs, and multiple ways to sequentialize and insert spills. I’d
+like to know what happens if you effectively check all combinations of
+those choices.&lt;/p&gt;
+
+&lt;p&gt;Of course, the details matter if the result is ever going to be used in
+a serious compiler. I have some questions about how to handle certain
+things, like pointers or break statements or exceptions, in a VSDG; but
+ignoring those concerns, the search also needs to produce reasonable
+answers quickly or most people will reject it. So a practical
+implementation needs good heuristics for value-ordering and for
+&lt;a href=&quot;https://en.wikipedia.org/wiki/Branch_and_bound&quot;&gt;branch-and-bound
+pruning&lt;/a&gt;. Given those, I
+suspect &lt;a href=&quot;http://intelligence.worldofcomputing.net/ai-search/limited-discrepancy-search.html&quot;&gt;Limited Discrepancy
+Search&lt;/a&gt;
+would be a good search strategy. (Sanseri reported good results with
+these choices in his thesis on IA-64 instruction selection, which seems
+like a good confirmation for my intuition.)&lt;/p&gt;
+
+&lt;p&gt;Anyone want to give this a try? I don’t have high hopes that anyone
+reading my blog has spare time for such a project, but there’s no harm
+in asking, right?&lt;/p&gt;
+
+&lt;h2 id=&quot;delegating-search-to-smt-solvers&quot;&gt;Delegating search to SMT solvers&lt;/h2&gt;
+
+&lt;p&gt;As a side note, I also want to highlight various efforts to use &lt;a href=&quot;https://en.wikipedia.org/wiki/Satisfiability_modulo_theories&quot;&gt;SMT
+solvers&lt;/a&gt;
+to improve optimization. Effectively, such projects delegate the search
+to the SMT solver, which implements a good set of general-purpose
+heuristics. This is a smart approach, although querying an SMT solver is
+still a fairly expensive thing to do, so people have resisted doing it
+during normal compilation. As a result, these tools are primarily used
+offline, to identify improvements that should be made to a compiler,
+rather than online during compilation.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Sebastian Buchwald’s “&lt;a href=&quot;https://pp.ipd.kit.edu/uploads/publikationen/buchwald15cc.pdf&quot;&gt;Optgen: A Generator for Local
+Optimizations&lt;/a&gt;”
+generates all possible peephole optimizations smaller than a given
+size limit, and in the paper he reported finding that GCC, LLVM, and
+the Intel C Compiler were all missing some optimizations that Optgen
+found.&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/google/souper&quot;&gt;Souper&lt;/a&gt; examines output from
+LLVM’s optimization passes and looks for patterns that can be shown
+using SMT queries to have better alternatives. I can’t find any
+published papers about this, but see John Regehr’s blog for some
+reported results, such as “&lt;a href=&quot;https://blog.regehr.org/archives/1252&quot;&gt;A Few Synthesizing Superoptimizer
+Results&lt;/a&gt;” from 2015. &lt;/li&gt;
+  &lt;li&gt;Lopez &lt;em&gt;et al&lt;/em&gt; built &lt;a href=&quot;https://github.com/nunoplopes/alive&quot;&gt;Alive&lt;/a&gt;, a
+tool to prove LLVM peephole optimizations correct or generate
+counterexamples explaining why they’re wrong; see “&lt;a href=&quot;https://www.cs.utah.edu/~regehr/papers/pldi15.pdf&quot;&gt;Provably Correct
+Peephole Optimizations with
+Alive&lt;/a&gt;”.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;conclusions&quot;&gt;Conclusions&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Compilers are structured with many independent optimization passes
+because they’re hard enough to get right that way, and worse if you
+try to combine them; but keeping them separate leads to suboptimal
+code.&lt;/li&gt;
+  &lt;li&gt;Choosing a different intermediate representation in the compiler
+changes which parts of the compiler are hard to write. That may
+enable more sophisticated compilers by pushing complexity to places
+where it is easier to manage.&lt;/li&gt;
+  &lt;li&gt;Since optimizations interact in complicated ways, I’d like to see
+more research into different ways to apply combinatorial search to
+find the best combination of optimizations for a given piece of
+code. I’ve proposed one approach that I haven’t seen attempted yet.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;responses&quot;&gt;Responses&lt;/h3&gt;
+
+&lt;p&gt;&lt;em&gt;Edit&lt;/em&gt;: Thanks to &lt;a href=&quot;https://news.ycombinator.com/item?id=14591111&quot;&gt;CalChris on Hacker
+News&lt;/a&gt; for the link to
+&lt;a href=&quot;http://unison-code.github.io/&quot;&gt;Unison&lt;/a&gt;, a recent LLVM pass that
+performs combined instruction scheduling and register allocation via
+constraint solving. See Lozano &lt;em&gt;et al&lt;/em&gt;, “&lt;a href=&quot;https://www.sics.se/~rcas/publications/CastanedaCarlssonEa_CC_2016.pdf&quot;&gt;Register Allocation and
+Instruction Scheduling in
+Unison&lt;/a&gt;”.&lt;/p&gt;</content><author><name>Jamey Sharp</name></author><category term="compilers" /><summary type="html">I’ve been thinking about something for a while now, and promised a year ago in my Optimal Optimization post that I would write it up.</summary></entry><entry><title type="html">Corrode update: control flow translation correctness</title><link href="https://jamey.thesharps.us/2017/04/06/corrode-update-control-flow-translation/" rel="alternate" type="text/html" title="Corrode update: control flow translation correctness" /><published>2017-04-06T03:24:00-07:00</published><updated>2017-04-06T03:24:00-07:00</updated><id>https://jamey.thesharps.us/2017/04/06/corrode-update-control-flow-translation</id><content type="html" xml:base="https://jamey.thesharps.us/2017/04/06/corrode-update-control-flow-translation/">&lt;p&gt;I’ve been pretty quiet about
+&lt;a href=&quot;https://github.com/jameysharp/corrode&quot;&gt;Corrode&lt;/a&gt; for a few months.
+That’s partly because I was traveling some, partly because I’ve been
+busy with non-Corrode client work, partly because I’ve been setting up
+my next &lt;a href=&quot;https://www.rust-lang.org/&quot;&gt;Rust&lt;/a&gt;-related contracts that I hope
+to get to announce soon… but mostly, I’ve been quiet about Corrode
+because I’ve been trying to fix some very difficult bugs since December,
+and it was demoralizing to fight with my code for so long.&lt;/p&gt;
+
+&lt;p&gt;So I’m very pleased to announce that Corrode now translates arbitrary C
+control flow to Rust, correctly!&lt;/p&gt;
+
+&lt;p&gt;One thing this has already enabled: the new &lt;a href=&quot;https://crates.io/crates/rust-lzo&quot;&gt;rust-lzo
+crate&lt;/a&gt; on crates.io is a Rust
+implementation of the &lt;a href=&quot;https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Oberhumer&quot;&gt;LZO compression
+algorithm&lt;/a&gt;,
+translated using Corrode from the Linux kernel’s implementation.
+Hooray!&lt;/p&gt;
+
+&lt;p&gt;I last talked about the challenges around getting control flow right in
+November (“&lt;a href=&quot;/2016/11/16/go-to-statement-considered-harmless/&quot;&gt;Go To Statement Considered (Mostly)
+Harmless&lt;/a&gt;”).
+At that time I mentioned that Corrode couldn’t handle “irreducible”
+control flow, or some other cases. Later I discovered that sometimes it
+wasn’t even producing correct answers for the cases that I thought were
+working.&lt;/p&gt;
+
+&lt;p&gt;Corrode’s new control-flow algorithm is based on
+&lt;a href=&quot;http://emscripten.org/&quot;&gt;Emscripten&lt;/a&gt;’s “Relooper” algorithm, as
+described in “&lt;a href=&quot;https://github.com/kripken/emscripten/blob/master/docs/paper.pdf?raw=true&quot;&gt;Emscripten: An LLVM-to-JavaScript
+Compiler&lt;/a&gt;”.
+I’d like to thank &lt;a href=&quot;http://brson.github.io/&quot;&gt;Brian Anderson&lt;/a&gt; of the
+Mozilla Rust team for reminding me that Emscripten exists and already
+solved almost exactly the problem I faced! (Unless I’m mixing people up
+again, in which case I’d like to thank whoever actually told me that,
+instead.)&lt;/p&gt;
+
+&lt;p&gt;The Relooper is fully general: it can handle &lt;em&gt;any&lt;/em&gt; control flow that you
+can express in C, including arbitrary ‘goto’ statements. And I have
+confidence that my implementation really will handle any wacky control
+flow you can come up with, partly because at this point I have tested
+&lt;em&gt;millions&lt;/em&gt; of randomly-generated control-flow graphs against relatively
+simple correctness properties using
+&lt;a href=&quot;https://en.wikipedia.org/wiki/QuickCheck&quot;&gt;QuickCheck&lt;/a&gt;. I found so many
+bugs that way! QuickCheck then simplified each bug-triggering
+control-flow graph down to the smallest graph that would still trigger a
+bug, making it easier to figure out why it failed.&lt;/p&gt;
+
+&lt;p&gt;I now have Travis-CI testing 100,000 random CFGs after every build. This
+is not a hardship because the implementation is fast: on my 2013-era
+laptop, testing that many examples only takes around 20 seconds!&lt;/p&gt;
+
+&lt;p&gt;Some of the bugs I encountered were in cases which are not covered by
+the Emscripten paper. I never found the current implementation of the
+Relooper when I looked at the Emscripten source code, so I don’t know
+whether those cases are covered by Emscripten’s real implementation and
+were just left out of the paper, or even if they were covered in the
+paper and I just missed it. I also discovered that one of the cases in
+the paper can’t happen because it’s subsumed by the others. I intend to
+ping the paper’s author about these surprises sooner or later…&lt;/p&gt;
+
+&lt;p&gt;This algorithm is tricky to get right and requires very carefully
+defining invariants and preconditions. Because I needed to reason about
+the algorithm in a very formal way to have any hope of getting it right,
+I thought it might be a good use case for annotating the implementation
+with refinement types as implemented in
+&lt;a href=&quot;https://ucsd-progsys.github.io/liquidhaskell-blog/&quot;&gt;LiquidHaskell&lt;/a&gt;.
+Unfortunately, I had too much trouble writing types that LiquidHaskell
+would accept, so I gave up. Still, just making the effort to write down
+a semi-formal model helped my understanding a lot, so it wasn’t wasted
+effort! I hope to find a good excuse to play with LiquidHaskell again
+sometime.&lt;/p&gt;
+
+&lt;p&gt;Although I wasn’t able to formalize my reasoning for why Corrode’s
+implementation of the Relooper is correct, I at least wrote down an
+English-language sketch of the correctness and termination proofs for
+the algorithm, as part of the &lt;a href=&quot;https://github.com/jameysharp/corrode/blob/master/src/Language/Rust/Corrode/CFG.md#transforming-cfgs-to-structured-programs&quot;&gt;Literate Haskell documentation for
+Corrode’s CFG
+module&lt;/a&gt;.
+Please read it, I spent a lot of time writing it ;-)&lt;/p&gt;
+
+&lt;p&gt;I’m slowly evolving this algorithm beyond Emscripten’s implementation,
+because for Corrode I want the output to be as human-readable and
+maintainable as possible. (Emscripten’s output is only intended for a
+web browser to parse, and you need only glance at JavaScript that humans
+write to realize that nobody’s much bothered if we give our web browsers
+massive headaches.) So far I have a simple post-processing pass to merge
+any “Simple” block with an immediately-following “Multiple” block, which
+eliminates the need to introduce an extra variable in the most common
+cases; and a straightforward check to avoid using labeled “break” and
+“continue” statements when referring to the most immediately enclosing
+loop. I have more clean-ups planned, inspired by trying to read the
+output from Corrode on real C source files.&lt;/p&gt;
+
+&lt;p&gt;I’m sure the question you’re asking yourself by now is, “But how is the
+&lt;a href=&quot;/2016/10/28/corrode-update-support-from-mozilla/&quot;&gt;CVS Rust
+port&lt;/a&gt;
+coming along?” Significantly better now, thank you! There are now only
+five source files that Corrode refuses to translate, for various
+reasons, although quite a few more still won’t compile after
+translation. And at least one source file now works fine that
+previously, when I tried converting it to Rust, made CVS fail its test
+suite. So a lot of the remaining work is just in cleaning up the output,
+plus a bit of handling more corner cases of C.&lt;/p&gt;
+
+&lt;p&gt;Corrode has many limitations left to fix. But at least control flow
+isn’t one of them any more!&lt;/p&gt;</content><author><name>Jamey Sharp</name></author><category term="rust" /><category term="corrode" /><summary type="html">I’ve been pretty quiet about Corrode for a few months. That’s partly because I was traveling some, partly because I’ve been busy with non-Corrode client work, partly because I’ve been setting up my next Rust-related contracts that I hope to get to announce soon… but mostly, I’ve been quiet about Corrode because I’ve been trying to fix some very difficult bugs since December, and it was demoralizing to fight with my code for so long.</summary></entry><entry><title type="html">Which projects should convert to Rust?</title><link href="https://jamey.thesharps.us/2017/01/03/which-projects-should-convert-to-rust/" rel="alternate" type="text/html" title="Which projects should convert to Rust?" /><published>2017-01-03T11:27:00-08:00</published><updated>2017-01-03T11:27:00-08:00</updated><id>https://jamey.thesharps.us/2017/01/03/which-projects-should-convert-to-rust</id><content type="html" xml:base="https://jamey.thesharps.us/2017/01/03/which-projects-should-convert-to-rust/">&lt;p&gt;Since the 1.0 release of the Rust programming language in May 2015,
+people have been exploring different ideas about what to use it for.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Does Rust make C obsolete?&lt;/li&gt;
+  &lt;li&gt;If so, should we replace existing C programs with Rust equivalents?&lt;/li&gt;
+  &lt;li&gt;Or should we leave existing code alone, write bindings that let us
+re-use it from Rust, and just write new code in this new language?&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Of course, there’s no one-size-fits-all answer to these questions. But I
+think there’s enough evidence now from various experiments to put
+together some pretty decent guidelines, which I’ll summarize here in
+case you’re impatient:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Rewriting existing software in Rust is an excellent educational
+exercise, worth doing if you just want to learn something.&lt;/li&gt;
+  &lt;li&gt;If you want your Rust version to be adopted, be prepared to give
+strong evidence that it’s equivalent to the original implementation.
+This is easiest if the project has a comprehensive test suite, and
+if much of your translation work can be automated.&lt;/li&gt;
+  &lt;li&gt;Translating a project to Rust is justifiable if the bugs it has the
+most trouble with are the kinds of bugs Rust is most helpful
+on—notably, memory safety bugs.&lt;/li&gt;
+  &lt;li&gt;If a project’s community is resistant to switching to Rust, any
+effort you put into porting may be wasted. Make sure you build
+community support around your work!&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;For more details, read on.&lt;/p&gt;
+
+&lt;p&gt;I’m taking this evidence from two kinds of projects. First, from quite a
+few efforts to replace pieces of C with Rust equivalents, such as:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/dikaiosune/rusl&quot;&gt;rusl&lt;/a&gt;: an experimental musl
+libc incremental rewrite in Rust&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://people.gnome.org/~federico/news-2016-10.html#25&quot;&gt;Librsvg gets
+Rusty&lt;/a&gt;:
+incrementally rewriting parts of an SVG library in Rust, while
+maintaining binary compatibility with the fully-C version of the
+library&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/uutils/coreutils&quot;&gt;uutils/coreutils&lt;/a&gt;: rewriting
+GNU coreutils in Rust from scratch&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://bluejekyll.github.io/blog/rust/dns/2016/08/21/a-year-of-rust-and-dns.html&quot;&gt;Trust-DNS&lt;/a&gt;:
+from-scratch implementation of a DNS client and server, inspired by
+CVEs in BIND&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;A second source of evidence comes from my efforts at automatic
+translation from C to Rust using
+&lt;a href=&quot;https://github.com/jameysharp/corrode&quot;&gt;Corrode&lt;/a&gt;, and especially my
+&lt;a href=&quot;/2016/10/28/corrode-update-support-from-mozilla/&quot;&gt;Mozilla-supported experiment on translating
+CVS&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;education&quot;&gt;Education&lt;/h2&gt;
+
+&lt;p&gt;Bear in mind that many of these porting efforts, such as rusl and
+librsvg, were started for educational purposes (see, for instance,
+&lt;a href=&quot;https://github.com/dikaiosune/rusl#goals-and-non-goals&quot;&gt;rusl’s goals and
+non-goals&lt;/a&gt;). I
+think it’s safe to guess that everyone who has made a serious attempt at
+a project like this has learned a lot! So let’s make that &lt;strong&gt;guideline
+#1:&lt;/strong&gt;&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;If you want to learn a language you don’t know already, one very
+educational way to do it is to rewrite some piece of software you
+already understand.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;(That guideline isn’t even specific to Rust. In 2002, I did an exercise
+in writing a run-length-encoding compressor in as many languages as I
+had patience to try; I picked C++, Perl, Java, Smalltalk, x86 assembly,
+and Haskell. It was very helpful for discovering some pros and cons of
+each language. I had not tried Smalltalk or Haskell before and that
+exercise led to my continued interest in Haskell years later.)&lt;/p&gt;
+
+&lt;p&gt;But what if you want more return on investment than just an educational
+experience? We’ll have to look at the results of these projects more
+closely.&lt;/p&gt;
+
+&lt;h2 id=&quot;correctness-safety-and-security&quot;&gt;Correctness, safety, and security&lt;/h2&gt;
+
+&lt;p&gt;These projects all share at least one big challenge: How can you be sure
+the Rust version behaves correctly? Nobody wants to replace code that
+works with code that has new bugs, and while Rust rules out certain
+classes of memory and type safety problems, it makes no guarantees about
+program logic. But then, how can you have any confidence that the
+original version is correct? Perhaps the answer to that question can
+answer the earlier one.&lt;/p&gt;
+
+&lt;p&gt;The above examples all use automated testing to gain confidence in their
+correctness. The musl, librsvg, and busybox projects each provide a test
+suite that these porting efforts adopted to test that their Rust
+rewrites produced the same results as the original implementations. So,
+assuming the tests pass for both implementations, we can be sure that
+the Rust version works exactly like the original, at least for those
+parts that are tested.&lt;/p&gt;
+
+&lt;p&gt;That’s not as satisfying as I’d like. For example, the author of rusl
+points out that not only is the test suite for musl incomplete, but
+&lt;a href=&quot;http://blog.adamperry.me/rust/2016/06/11/baby-steps-porting-musl-to-rust/#how-am-i-doing-this&quot;&gt;musl doesn’t pass all of
+it&lt;/a&gt;.
+Still, re-using an existing test suite provides pretty good confidence.&lt;/p&gt;
+
+&lt;p&gt;Trust-DNS doesn’t re-use an existing test suite, but its author wrote a
+test suite based on the relevant DNS specifications, and some of its
+tests query well-known public DNS servers as a simple interoperability
+check.&lt;/p&gt;
+
+&lt;p&gt;That approach has hazards as well. &lt;a href=&quot;https://pdfs.semanticscholar.org/2ff8/78fcf73bf06e7d3761f5c360d17528c706cf.pdf&quot;&gt;NASA Langley Research Center’s 1990
+follow
+up&lt;/a&gt;
+to the &lt;a href=&quot;http://sunnyday.mit.edu/papers/nver-tse.pdf&quot;&gt;Knight/Leveson “Experimental Evaluation of the Assumption of
+Independence in Multi-Version Programming” from
+1985&lt;/a&gt; found that when
+multiple teams attempt to write separate programs implementing the same
+specification, their bugs are not statistically independent. When
+multiple implementations failed on the same inputs, they found that
+“lack of understanding by the programmers of key points in the
+specification was a major contributor”.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;http://bluejekyll.github.io/blog/rust/dns/2016/08/21/a-year-of-rust-and-dns.html#implementing-rfc1035-was-deceivingly-easy&quot;&gt;Trust-DNS encountered an instance of this
+problem&lt;/a&gt;,
+in fact, related to this bit of RFC6840: “The guidance in the above
+paragraph differs from what has been published before but is consistent
+with current common practice.” Different DNS developers interpreted a
+particular specification section in different ways, leading to
+non-interoperable implementations.&lt;/p&gt;
+
+&lt;p&gt;But if the implementation and the tests are written by the same person,
+then on top of the problems of incomplete test suites, any
+mis-interpretation of the specification will affect both the
+implementation and its tests, resulting in an incorrect implementation
+that appears to be correct because it passes its test suite.&lt;/p&gt;
+
+&lt;p&gt;That said, writing a test suite from a specification is far better than
+nothing, and I’m sure this approach has caught bugs in Trust-DNS.&lt;/p&gt;
+
+&lt;p&gt;Anyway, correctness isn’t all that matters. The safety and security
+properties that Rust guarantees are not the only such properties you
+might care about, and test suites can’t cover the gap. If some invalid
+input causes the C version to return an error and keep going, but causes
+the Rust version to panic or go into an infinite loop, that could be an
+exploitable denial-of-service bug. Or if the Rust version is missing an
+access-control check, it could disclose information that an attacker
+wasn’t authorized for. It’s not feasible to write tests to catch all of
+these cases.&lt;/p&gt;
+
+&lt;h2 id=&quot;equivalence&quot;&gt;Equivalence&lt;/h2&gt;
+
+&lt;p&gt;I’d summarize all these concerns as &lt;strong&gt;guideline #2&lt;/strong&gt;:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;If you want to replace existing software with a Rust implementation,
+then the Rust version must behave equivalently to the original, aside
+from inputs that crash the original. To convince other people to adopt
+your new implementation, you must give them confidence that the new
+implementation really is equivalent.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Reusing the original implementation’s test suite is a good start at
+providing this confidence. Demonstrating that the new implementation can
+interoperate with other implementations, as Trust-DNS does, is another
+good step.&lt;/p&gt;
+
+&lt;p&gt;But I think better approaches are available for demonstrating
+equivalence when the new implementation is supposed to match an existing
+one. (These don’t help Trust-DNS, but do help the others.)&lt;/p&gt;
+
+&lt;p&gt;First, you could mechanically prove that the two implementations are
+equivalent. The developers of &lt;a href=&quot;https://www.usenix.org/legacy/event/osdi08/tech/full_papers/cadar/cadar_html/#sec:crosschecking&quot;&gt;KLEE tested equivalence between busybox
+and GNU
+coreutils&lt;/a&gt;,
+for example. KLEE automatically generated test cases that maximized code
+coverage in both code bases, finding inputs which produced different
+outputs. In several cases, those differences represented significant
+correctness bugs; in others, just features that weren’t implemented in
+one version or the other. The &lt;a href=&quot;http://saw.galois.com/&quot;&gt;Software Analysis
+Workbench&lt;/a&gt; from Galois is also designed for
+this, and I suspect &lt;a href=&quot;http://lcamtuf.coredump.cx/afl/&quot;&gt;afl-fuzz&lt;/a&gt; could be
+used in a similar way. Each tool has different trade-offs between
+performance, completeness, and ease-of-use.&lt;/p&gt;
+
+&lt;p&gt;I’m surprised that I haven’t seen any of the port-to-Rust projects use
+any of those tools, to be honest.&lt;/p&gt;
+
+&lt;p&gt;Second, and my personal favorite, is to automate as much of the porting
+effort as possible. If you’ve been following &lt;a href=&quot;http://jamey.thesharps.us/search/label/corrode&quot;&gt;my blog posts on
+Corrode&lt;/a&gt;, then you know
+this is the approach I’ve been working on. This changes the problem from
+“do I trust the Rust version?” to “do I trust the translator?” Don’t get
+me wrong: establishing trust in the automation is hard too! But so long
+as the translation tools can be reused across many projects, it’s worth
+spending a lot of time on their correctness.&lt;/p&gt;
+
+&lt;p&gt;Any of the above techniques for establishing equivalence may be enough
+on its own to convince people to adopt your shiny new Rust
+implementation. But when the software you’re converting is especially
+important, you may need to combine techniques. For example, in my CVS
+experiments, I’m using Corrode to automate much of the conversion, but
+I’m also relying on the extensive test suite that CVS has to check that
+neither Corrode nor I made mistakes. Since Corrode is still young, I’ve
+found bugs in it this way, making the test suite an excellent sanity
+check.&lt;/p&gt;
+
+&lt;h2 id=&quot;time-and-resources&quot;&gt;Time and resources&lt;/h2&gt;
+
+&lt;p&gt;This suggests &lt;strong&gt;guideline #3&lt;/strong&gt;:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;The amount of energy you put into converting a project to Rust should
+be proportional to the importance of that project, and to the
+consequences of those bugs which Rust can help with.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;A program that doesn’t interact with the Internet or with files that
+might come from untrusted sources, like a single-player game or a
+scientific simulation, may not be worth spending much effort converting
+to Rust. To be clear, I think there are benefits to choosing Rust when
+starting work on scientific simulations or games! But once you have
+already written and debugged code for these sorts of programs, the
+marginal benefit of &lt;em&gt;switching&lt;/em&gt; to Rust is much lower.&lt;/p&gt;
+
+&lt;p&gt;On the other hand, a small library that is used by a huge number of
+programs and often handles untrusted data, such as zlib or a multimedia
+codec, might be worth spending a lot of time on:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;because Rust’s memory-safety guarantees address these libraries’
+most common sources of bugs,&lt;/li&gt;
+  &lt;li&gt;because the consequences of those bugs are widespread due to the
+number of users,&lt;/li&gt;
+  &lt;li&gt;and because the amount of code to translate is small enough that the
+effort is nicely bounded.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Widely used network programs such as NTP, SSH, web servers, etc., may be
+strong candidates for the same reasons.&lt;/p&gt;
+
+&lt;p&gt;For libraries that are not worth translating to Rust, it’s probably
+worth at least using tools like
+&lt;a href=&quot;https://github.com/Yamakaky/rust-bindgen&quot;&gt;rust-bindgen&lt;/a&gt; to generate
+Rust bindings so Rust developers can take advantage of the time and
+effort that have gone into those libraries.&lt;/p&gt;
+
+&lt;p&gt;Ideally, grant programs like the &lt;a href=&quot;https://www.coreinfrastructure.org/&quot;&gt;Linux Foundation’s Core Infrastructure
+Initiative&lt;/a&gt; or &lt;a href=&quot;https://www.mozilla.org/moss&quot;&gt;Mozilla Open Source
+Support&lt;/a&gt; should fund efforts to translate
+critical open-source projects to Rust. Of course, until there’s a
+significant example where a Rust implementation has replaced its
+predecessor, this may be a hard sell.&lt;/p&gt;
+
+&lt;p&gt;And on that note, here’s &lt;strong&gt;guideline #4&lt;/strong&gt;:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;If you want your Rust port of a project to be adopted, you’d better
+make sure you have buy-in from that project’s community.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;This is just standard project management advice, of course, and applies
+to both open-source and commercial in-house projects. A project’s
+community is deeply invested in their existing implementation,
+especially in projects with a long history. The larger and more
+established the community is, the harder it will be to convince a
+critical mass of their developers to learn Rust to continue working on a
+project that many of them probably feel is fine as-is.&lt;/p&gt;
+
+&lt;p&gt;You could say that the reason I chose to try converting CVS to Rust
+because not only does it satisfy guideline #3, but it also has too few
+people caring about it to complain about my attempts. 😉&lt;/p&gt;
+
+&lt;p&gt;I find it unlikely, for example, that the Linux kernel will ever switch
+to Rust. (Although that won’t stop me from testing Corrode on it!) In
+fact, I’d expect some hypothetical new operating system to supplant
+Linux before Linux developers would switch programming languages.
+&lt;small&gt;(I’m cheering for &lt;a href=&quot;http://sel4.systems/&quot;&gt;seL4&lt;/a&gt;, personally,
+perhaps together with &lt;a href=&quot;http://genode.org/&quot;&gt;Genode&lt;/a&gt;.)&lt;/small&gt;&lt;/p&gt;
+
+&lt;p&gt;On the other hand, it looks like developers working on GNOME libraries
+like librsvg may wind up being relatively early adopters.&lt;/p&gt;
+
+&lt;p&gt;The gap between “nobody wants this” and “everybody’s on board” will move
+over time, as Rust’s advantages are demonstrated in more projects. For
+the moment, it’s still a young language: while I expect projects willing
+to make the switch will be relatively rare for the moment, I believe
+we’ll see some significant early adopters soon. Naturally, I hope my
+work on Corrode will help make that happen sooner!&lt;/p&gt;
+
+&lt;h2 id=&quot;summary&quot;&gt;Summary&lt;/h2&gt;
+
+&lt;p&gt;To recap:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Rewriting existing software in Rust is an excellent educational
+exercise, worth doing if you just want to learn something.&lt;/li&gt;
+  &lt;li&gt;If you want your Rust version to be adopted, be prepared to give
+strong evidence that it’s equivalent to the original implementation.
+This is easiest if the project has a comprehensive test suite, and
+if much of your translation work can be automated.&lt;/li&gt;
+  &lt;li&gt;Translating a project to Rust is justifiable if the bugs it has the
+most trouble with are the kinds of bugs Rust is most helpful
+on—notably, memory safety bugs.&lt;/li&gt;
+  &lt;li&gt;If a project’s community is resistant to switching to Rust, any
+effort you put into porting may be wasted. Make sure you build
+community support around your work!&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Discussion elsewhere on this post:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.reddit.com/r/rust/comments/5luk8r/which_projects_should_convert_to_rust/&quot;&gt;Reddit:
+/r/rust&lt;/a&gt; &lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://news.ycombinator.com/item?id=13313149&quot;&gt;Hacker News&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>Jamey Sharp</name></author><category term="rust" /><category term="corrode" /><summary type="html">Since the 1.0 release of the Rust programming language in May 2015, people have been exploring different ideas about what to use it for.</summary></entry><entry><title type="html">How to translate a large C project to Rust</title><link href="https://jamey.thesharps.us/2016/12/09/how-to-translate-large-c-project-to-rust/" rel="alternate" type="text/html" title="How to translate a large C project to Rust" /><published>2016-12-09T15:55:00-08:00</published><updated>2016-12-09T15:55:00-08:00</updated><id>https://jamey.thesharps.us/2016/12/09/how-to-translate-large-c-project-to-rust</id><content type="html" xml:base="https://jamey.thesharps.us/2016/12/09/how-to-translate-large-c-project-to-rust/">&lt;p&gt;In October, I started working on &lt;a href=&quot;/2016/10/28/corrode-update-support-from-mozilla/&quot;&gt;translating CVS from C to
+Rust&lt;/a&gt;,
+and today I’d like to answer these questions about how that’s going:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;How does a Corrode-aided porting effort work, in practice?&lt;/li&gt;
+  &lt;li&gt;How much progress have I made on CVS, and how hard would it be to do
+the same for other projects today?&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;how-to-translate-a-new-project-using-corrode&quot;&gt;How to translate a new project using Corrode&lt;/h2&gt;
+
+&lt;p&gt;Here’s the process I’ve followed while working on translating CVS to
+Rust. You can find the scripts and patches described here in my
+&lt;a href=&quot;https://github.com/jameysharp/cvs-rs&quot;&gt;cvs-rs&lt;/a&gt; repository.&lt;/p&gt;
+
+&lt;h3 id=&quot;0-does-it-build&quot;&gt;0. Does it build?&lt;/h3&gt;
+
+&lt;p&gt;Before doing anything else, I made sure that I could build CVS from
+unmodified source using GCC. This is important! If it doesn’t work with
+a standard C compiler, there is absolutely no way Corrode is going to
+give you good results. Or as Charles Babbage put it:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;On two occasions I have been asked, ‘Pray, Mr. Babbage, if you put
+into the machine wrong figures, will the right answers come out?’ I am
+not able rightly to apprehend the kind of confusion of ideas that
+could provoke such a question.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;If the project you’re translating has a test suite, this is also a good
+time to check that the test suite passes before you start changing
+things!&lt;/p&gt;
+
+&lt;h3 id=&quot;1-trial-run&quot;&gt;1. Trial run&lt;/h3&gt;
+
+&lt;p&gt;Next, to get a rough idea of how much work the translation will
+eventually require, I tried just substituting Corrode and rustc in place
+of GCC in the build. Most build systems for open source projects make it
+easy to do that, usually by setting a “CC” variable to the path you want
+to use as your C compiler. In the case of CVS, I did it this way:&lt;/p&gt;
+
+&lt;div class=&quot;language-sh highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;make &lt;span class=&quot;nv&quot;&gt;CC&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;/path/to/corrode/scripts/corrode-cc
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;corrode-cc&lt;/code&gt; is a wrapper script that does these steps:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Run Corrode to translate one C source file to a standalone Rust
+module.&lt;/li&gt;
+  &lt;li&gt;Run rustc on that Rust module, asking it to treat it as a dylib-type
+crate but to only emit an object file.&lt;/li&gt;
+  &lt;li&gt;If either of those steps fails, save the error message and then run
+GCC to get an object file anyway.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;So the result of this step is that we have a bunch of Rust modules lying
+around, plus a bunch of files recording various error messages.
+Hopefully the build completed successfully, and if we’re lucky, there’s
+even some Rust-compiled code in it, and if we’re really lucky, the new
+binary still works!&lt;/p&gt;
+
+&lt;p&gt;To estimate how much work the translation is going to take, you can look
+at several factors:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;How many distinct errors did the build produce? The &lt;code class=&quot;highlighter-rouge&quot;&gt;corrode-cc&lt;/code&gt;
+script writes error messages to files named “&lt;code class=&quot;highlighter-rouge&quot;&gt;errors-&amp;lt;hash&amp;gt;&lt;/code&gt;”, where
+the hash is over the error message itself, so if multiple files run
+into identical errors in some header file that they all include, that
+error will only show up once. Error messages:&lt;/p&gt;
+
+    &lt;ul&gt;
+      &lt;li&gt;may indicate that the project relies on a feature of C that Corrode
+does not yet handle,&lt;/li&gt;
+      &lt;li&gt;or may indicate a bug in Corrode,&lt;/li&gt;
+      &lt;li&gt;or may indicate code that Rust can’t verify is safe.&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;How many object files (&lt;code class=&quot;highlighter-rouge&quot;&gt;*.o&lt;/code&gt;) did the build produce?&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;How many Rust modules (&lt;code class=&quot;highlighter-rouge&quot;&gt;*.rs&lt;/code&gt;)?  In the best case, there will be one
+for each object file, but currently Corrode fails to translate a
+variety of C patterns, and whenever Corrode fails it refuses to
+generate any output. Those cases may indicate that you’ll need to
+patch the C source to make it easier to translate. This can be tricky.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;How many of the object files were compiled via Rust? If the
+&lt;code class=&quot;highlighter-rouge&quot;&gt;corrode-cc&lt;/code&gt; wrapper script had to fall back to compiling via GCC,
+then there are usually small edits you can make to the
+Corrode-generated Rust to make rustc accept it. This is tedious but
+generally pretty easy.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;I found that the easiest way to check whether an object file was
+compiled using GCC or Rust was to check if the string “.rs” appears in
+it:&lt;/p&gt;
+
+&lt;div class=&quot;language-sh highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;grep -lF .rs &lt;span class=&quot;k&quot;&gt;*&lt;/span&gt;.o
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;(Of course this might have false positives, so if you have a better
+approach please let me know!)&lt;/p&gt;
+
+&lt;p&gt;Based on these results you should get some idea how close Corrode alone
+will get you, and how much manual work you’ll need to do to complete the
+translation.&lt;/p&gt;
+
+&lt;h3 id=&quot;2-integrate-rust-into-the-build-system&quot;&gt;2. Integrate Rust into the build system&lt;/h3&gt;
+
+&lt;p&gt;For the CVS case study, I wanted use Corrode as if it were just another
+C compiler. So the C source is the canonical implementation, and I
+patched the build system to compile some source files via Rust instead.&lt;/p&gt;
+
+&lt;p&gt;Which source files should you do this to first? Maybe pick just one that
+worked in step 1.&lt;/p&gt;
+
+&lt;p&gt;For CVS, this amounted to making the following edits to
+&lt;code class=&quot;highlighter-rouge&quot;&gt;src/Makefile.am&lt;/code&gt;:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;Delete a selected subset of C sources from the &lt;code class=&quot;highlighter-rouge&quot;&gt;cvs_SOURCES&lt;/code&gt;
+variable.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Create a &lt;code class=&quot;highlighter-rouge&quot;&gt;RUST_SOURCES&lt;/code&gt; variable where, for example, if I removed
+“&lt;code class=&quot;highlighter-rouge&quot;&gt;checkin.c&lt;/code&gt;” from &lt;code class=&quot;highlighter-rouge&quot;&gt;cvs_SOURCES&lt;/code&gt;, then I added “&lt;code class=&quot;highlighter-rouge&quot;&gt;checkin.rs&lt;/code&gt;” to
+&lt;code class=&quot;highlighter-rouge&quot;&gt;RUST_SOURCES&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;I added these rules:&lt;/p&gt;
+
+    &lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nl&quot;&gt;%.rs&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;CC=corrode&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;%.rs&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;%.c&lt;/span&gt;
+        &lt;span class=&quot;err&quot;&gt;$(COMPILE)&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;-c&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;$&amp;lt;&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;&amp;gt;/dev/null&lt;/span&gt;
+
+&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;rust-sources&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;rust-sources&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;$(RUST_SOURCES)&lt;/span&gt;
+
+&lt;span class=&quot;nl&quot;&gt;libcvs-rs.a&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;lib.rs $(RUST_SOURCES)&lt;/span&gt;
+        &lt;span class=&quot;err&quot;&gt;rustc&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;-A&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;bad-style&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;-A&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;unused-mut&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;-g&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;-O&lt;/span&gt;
+        &lt;span class=&quot;err&quot;&gt;-C&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;debug-assertions&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;on --crate-type&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;staticlib
+        &lt;span class=&quot;err&quot;&gt;-o&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;$@&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;$&amp;lt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Finally, I added &lt;code class=&quot;highlighter-rouge&quot;&gt;libcvs-rs.a&lt;/code&gt; to &lt;code class=&quot;highlighter-rouge&quot;&gt;cvs_DEPENDENCIES&lt;/code&gt;, and
+“&lt;code class=&quot;highlighter-rouge&quot;&gt;libcvs-rs.a -ldl -lpthread -lgcc_s -lc -lm -lrt -lutil&lt;/code&gt;” to
+&lt;code class=&quot;highlighter-rouge&quot;&gt;cvs_LDADD&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Also, I created a top-level Rust module in &lt;code class=&quot;highlighter-rouge&quot;&gt;src/lib.rs&lt;/code&gt; which just
+re-exports declarations from the translated modules. So if &lt;code class=&quot;highlighter-rouge&quot;&gt;checkin.rs&lt;/code&gt;
+is in &lt;code class=&quot;highlighter-rouge&quot;&gt;RUST_SOURCES&lt;/code&gt;, &lt;code class=&quot;highlighter-rouge&quot;&gt;lib.rs&lt;/code&gt; contains a “&lt;code class=&quot;highlighter-rouge&quot;&gt;pub use checkin;&lt;/code&gt;” item.&lt;/p&gt;
+
+&lt;p&gt;Note that I split out a phony target just for ensuring that all the Rust
+sources have been built. That allowed me to split the build process into
+phases that run before and run after Corrode:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Apply patches to the C source as needed that make it easier to
+translate.&lt;/li&gt;
+  &lt;li&gt;Run “&lt;code class=&quot;highlighter-rouge&quot;&gt;make rust-sources&lt;/code&gt;” to auto-generate a rough version of each
+selected C source file.&lt;/li&gt;
+  &lt;li&gt;Apply additional patches, this time to the generated Rust, as needed
+to improve the translation.&lt;/li&gt;
+  &lt;li&gt;Run “&lt;code class=&quot;highlighter-rouge&quot;&gt;make&lt;/code&gt;” to complete the build.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;As Corrode and related tools improve, there should be less need for
+patches to either the C or the Rust source. If someday we can fully
+automate this process, then this multi-phase build approach can go away
+entirely.&lt;/p&gt;
+
+&lt;p&gt;I’m using &lt;a href=&quot;http://savannah.nongnu.org/projects/quilt&quot;&gt;quilt&lt;/a&gt; to manage
+the collections of patches. I have two reasons for doing it this way,
+and maybe neither will apply to you:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;I wanted people to be able to learn from the cvs-rs repository, so
+I’m using the patch series as a way of communicating aspects of the
+process I’m following. If you’re just doing a one-off conversion,
+you don’t necessarily need to document the steps you took along the
+way.&lt;/li&gt;
+  &lt;li&gt;Corrode is still under active development, so I’m frequently
+re-running it. Recording all the manual changes I’m making in
+separate patches makes it easier for me to manage my
+work-in-progress.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;3-translate-more-or-translate-better&quot;&gt;3. Translate more, or translate better&lt;/h3&gt;
+
+&lt;p&gt;With that foundation in place, now comes the fun part: namely,
+“everything else!”&lt;/p&gt;
+
+&lt;p&gt;My current process for translating CVS involves doing either of these
+two tasks, over and over:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Pick a new C source file, move it to the build-via-Rust list, and
+see if it works.&lt;/li&gt;
+  &lt;li&gt;Pick some piece of generated Rust, and see if I can improve it (by
+making it safer or more idiomatic).&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;You can keep doing these steps until there’s nothing left to do, or you
+get bored.&lt;/p&gt;
+
+&lt;h2 id=&quot;status&quot;&gt;Status&lt;/h2&gt;
+
+&lt;p&gt;So far, I have translated 6.4% of the non-comment, non-blank lines in
+the &lt;code class=&quot;highlighter-rouge&quot;&gt;src/&lt;/code&gt; subdirectory of CVS, from 10 source files.&lt;/p&gt;
+
+&lt;p&gt;Sometimes, translating a thousand-line source file has taken 10 minutes.
+Other times, I’ve spent an entire afternoon comparing the generated Rust
+to the original C without spotting any differences, and yet the Rust
+version doesn’t pass the test suite.&lt;/p&gt;
+
+&lt;p&gt;So there’s more work to be done on Corrode, to make it reliably convert
+as many kinds of C source as possible. At this point, I’m going back to
+improving Corrode for a bit, rather than focusing on translating more of
+CVS.&lt;/p&gt;
+
+&lt;p&gt;Still, if you’re interested in trying Corrode, I’d encourage you to try
+going through at least step 1 on whatever project you think is
+interesting. See how far you get, and if you find a project where
+Corrode works well, I would love to hear about it!&lt;/p&gt;
+
+&lt;p&gt;Discussion elsewhere on this post:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.reddit.com/r/rust/comments/5hh8yl/how_to_translate_a_large_c_project_to_rust/&quot;&gt;Reddit:
+/r/rust&lt;/a&gt; &lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.reddit.com/r/programming/comments/5hh9or/how_to_translate_a_large_c_project_to_rust/&quot;&gt;Reddit:
+/r/programming&lt;/a&gt; &lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.reddit.com/r/linux/comments/5hhbyj/how_to_translate_a_large_c_project_to_rust/&quot;&gt;Reddit:
+/r/linux&lt;/a&gt; &lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.reddit.com/r/gnome/comments/5hhbvl/how_to_translate_a_large_c_project_to_rust/&quot;&gt;Reddit:
+/r/gnome&lt;/a&gt; &lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://news.ycombinator.com/item?id=13142977&quot;&gt;Hacker News&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>Jamey Sharp</name></author><category term="rust" /><category term="corrode" /><summary type="html">In October, I started working on translating CVS from C to Rust, and today I’d like to answer these questions about how that’s going:</summary></entry><entry><title type="html">Go To Statement Considered (Mostly) Harmless</title><link href="https://jamey.thesharps.us/2016/11/16/go-to-statement-considered-harmless/" rel="alternate" type="text/html" title="Go To Statement Considered (Mostly) Harmless" /><published>2016-11-16T01:42:00-08:00</published><updated>2016-11-16T01:42:00-08:00</updated><id>https://jamey.thesharps.us/2016/11/16/go-to-statement-considered-harmless</id><content type="html" xml:base="https://jamey.thesharps.us/2016/11/16/go-to-statement-considered-harmless/">&lt;p&gt;While this post’s title is a mash-up of “Hitchhiker’s Guide to the
+Galaxy” with Dijkstra’s 1968 letter, “&lt;a href=&quot;http://www.u.arizona.edu/~rubinson/copyright_violations/Go_To_Considered_Harmful.html&quot;&gt;Go To Statement Considered
+Harmful&lt;/a&gt;”,
+today I have a bunch of
+&lt;a href=&quot;https://github.com/jameysharp/corrode&quot;&gt;Corrode&lt;/a&gt;-related news to share,
+not just commentary on “goto”. But let’s start there, because I’m super
+proud of this…&lt;/p&gt;
+
+&lt;h2 id=&quot;translating-cs-switch-and-goto-to-rust&quot;&gt;Translating C’s “switch” and “goto” to Rust&lt;/h2&gt;
+
+&lt;p&gt;Six months ago I wrote ‘&lt;a href=&quot;/2016/05/09/how-to-eliminate-goto-statements/&quot;&gt;How to eliminate “goto”
+statements&lt;/a&gt;’,
+about this question:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;C supports “goto” statements. Rust does not. Can programs with “goto”
+statements be turned into programs without them?&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Over the last two weeks I’ve finally gotten to write code tackling this
+problem. (Thanks again to &lt;a href=&quot;/2016/10/28/corrode-update-support-from-mozilla/&quot;&gt;Mozilla for supporting this
+project&lt;/a&gt;!
+I could not afford to dedicate the time this took without their
+support.)&lt;/p&gt;
+
+&lt;p&gt;The result: Corrode now understands all forms of C statements except for
+the GCC extensions for “local labels”, “computed goto”, and inline
+assembly. The last holdouts were “goto” statements, obviously, as well
+as “switch” statements, which in C can lead to similarly complex control
+flow.&lt;/p&gt;
+
+&lt;p&gt;I’m so excited, because this is a huge milestone! Lots of C code uses
+“switch” statements, and regardless of Dijkstra’s opinions, lots of C
+code uses “goto” as well. None of the remaining GCC extensions to
+statement syntax are used widely enough to have nearly as much impact.&lt;/p&gt;
+
+&lt;p&gt;The implementation looks very little like I expected it would six months
+ago. General implementation strategy:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Gee, translating “goto” statements is hard. I know! I’ll turn
+&lt;em&gt;everything&lt;/em&gt; into “goto” statements, and then turn the resulting mess
+back into structured Rust. That’ll be easier!&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;If you’re interested in the details, &lt;a href=&quot;https://github.com/jameysharp/corrode/blob/master/src/Language/Rust/Corrode/CFG.md&quot;&gt;check out the re-structuring
+implementation&lt;/a&gt;.
+It’s a 12-page paper describing the algorithms and invariants, with code
+interspersed &lt;a href=&quot;/2016/07/08/translating-c-to-rust/&quot;&gt;in literate programming style, like the rest of
+Corrode&lt;/a&gt;.
+(And if you find any of the explanations confusing, I would love to
+receive pull requests making the documentation easier to understand!)&lt;/p&gt;
+
+&lt;p&gt;It is still possible to write C programs using “goto” or “switch” that
+Corrode can’t translate to Rust yet, but they’re less common than you
+might expect. They fall into two categories:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;If it’s possible to enter a loop at two or more different places,
+the control flow is called “irreducible” and Corrode can’t translate
+it, yet, because it fundamentally can’t be represented in Rust
+without duplicating code or introducing new variables. The classic
+example of this is “&lt;a href=&quot;https://www.lysator.liu.se/c/duffs-device.html&quot;&gt;Duff’s
+Device&lt;/a&gt;”. Many
+algorithms in compilers have trouble with irreducible control flow,
+so Corrode is not alone in this. But in “&lt;a href=&quot;http://onlinelibrary.wiley.com/doi/10.1002/spe.1059/abstract&quot;&gt;A study of irreducibility
+in C
+programs&lt;/a&gt;”
+from 2010, Stanier and Watson found that less than 0.05% of
+functions had irreducible control flow, across 15 large open source
+projects. So this is not a big concern, although I have thoughts on
+how to handle it anyway.&lt;/li&gt;
+  &lt;li&gt;The more common case involves certain “goto fail”-style control
+flow. A surprisingly wide range of “goto fail”-style control flow
+actually works just fine when Corrode translates it to Rust. I
+haven’t figured out yet how to characterize which cases don’t work
+yet.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;One more challenge with the new implementation: It produces very noisy
+Rust.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;The output is full of extra “break” and “continue” statements in
+places they aren’t strictly necessary.&lt;/li&gt;
+  &lt;li&gt;Every loop has a label, in case there are any multi-level exits that
+need to refer to it, and every “break” or “continue” uses the
+appropriate loop label even if it doesn’t need to.&lt;/li&gt;
+  &lt;li&gt;Corrode no longer generates “while” loops, just infinite “loop”
+statements with a conditional “break” at the beginning.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;All three of those problems should be fixable, but I needed to get the
+basic algorithm right first before figuring out how to produce more
+readable Rust.&lt;/p&gt;
+
+&lt;h2 id=&quot;progress-translating-cvs-to-rust&quot;&gt;Progress translating CVS to Rust&lt;/h2&gt;
+
+&lt;p&gt;Last time I talked about &lt;a href=&quot;/2016/10/28/corrode-update-support-from-mozilla/&quot;&gt;why CVS is my Corrode current case
+study&lt;/a&gt;.
+Between the above work on goto/switch and a bunch of smaller fixes, the
+“Rustification” of CVS is going pretty well!&lt;/p&gt;
+
+&lt;p&gt;Corrode is now able to produce Rust output of some sort for about 64% of
+the C source files in CVS. (I’m not counting C source for other
+platforms that doesn’t get built on my system; I get 91 .rs files when I
+build CVS with Corrode, compared to 143 .o files in the build overall.)&lt;/p&gt;
+
+&lt;p&gt;Of the remaining errors causing Corrode to fail on CVS source files,
+roughly one-third are due to over-complicated control flow. Another
+third are due to various uses of C-style union types; see &lt;a href=&quot;https://github.com/jameysharp/corrode/issues/22&quot;&gt;Corrode issue
+#22&lt;/a&gt; for background.
+(I need to work out how to merge the partial implementation of unions
+from &lt;a href=&quot;https://github.com/jameysharp/corrode/pull/63&quot;&gt;pull request
+#63&lt;/a&gt;!)&lt;/p&gt;
+
+&lt;p&gt;The rest are mostly things that will probably never work in Rust, but
+these usually can be manually fixed in the C source before running
+Corrode. Some examples:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Enum-typed global variables without an explicit initializer are a
+problem because C’s default zero-initialization policy doesn’t make
+sense in Rust, where enum types aren’t fully isomorphic to integers.
+I suspect I’ll edit the CVS source to provide initializers for
+these.&lt;/li&gt;
+  &lt;li&gt;Rust doesn’t allow declaring functions that take variable numbers of
+arguments, but the CVS code base declares several. These functions
+just have to stay in C, or re-write the callers to not use a
+varargs-style API.&lt;/li&gt;
+  &lt;li&gt;One CVS header declares a function pointer that takes exactly 3
+arguments, but actually expects the corresponding function to take a
+variable number of arguments. C allows passing more arguments than
+declared, but Rust doesn’t. I expect that changing the declaration
+to explicitly accept a variable number of arguments will fix the
+immediate problem, although then of course I’ll run into the varargs
+problem from the previous point.&lt;/li&gt;
+  &lt;li&gt;Rust doesn’t support C’s `alloca` function for variable-sized
+stack allocations. I guess I’ll probably carefully replace it with
+`malloc`/`free` pairs in the right places, and then try to clean
+up the resulting Rust.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Once Corrode has generated a pile of Rust source files, then we get to
+find out how many of them the Rust compiler will actually accept. At the
+moment, the answer is about 44%. Here’s what goes wrong with the other
+56%:&lt;/p&gt;
+
+&lt;p&gt;Nearly 75% of the errors in the generated Rust are “use of possibly
+uninitialized variable” complaints.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;This is often because some uninitialized variable is passed by
+reference to a function that only uses it as an out-parameter, which
+means it’s safe, but the compiler can’t tell that. I think the right
+option is to refactor functions with out-parameters to return tuples
+in Rust, optionally with a C compatibility wrapper if the function
+still needs to be callable from non-Rust functions.&lt;/li&gt;
+  &lt;li&gt;Another class of “uninitialized variable” errors is because the C
+program assigned to all of the fields of a struct individually, but
+Rust can’t conclude that the struct itself is initialized. This case
+should be fixable by using C99 structure literals in the pre-Corrode
+source, or hacking up the Rust output to use struct constructors.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;16% of error messages are due to &lt;a href=&quot;https://github.com/jameysharp/corrode/issues/77&quot;&gt;issue
+#77&lt;/a&gt;, which is that
+Corrode doesn’t translate nullable function pointers in a way that the
+Rust compiler will accept. (I had assumed I could treat them the same as
+raw pointers, which are nullable and allow arbitrary casts, but nope; in
+Rust, function pointers are strongly type-safe and memory-safe.)&lt;/p&gt;
+
+&lt;p&gt;3.3% are due to Rust not supporting as many kinds of constant
+expressions as C does. In particular, I think it ought to be possible to
+evaluate if-expressions, calls to “std::mem::size_of”, and calls to
+“as_ptr” on types such as “str”, so long as their arguments or operands
+are all constant. (I haven’t checked exactly what current nightly Rust
+allows, yet, but I don’t think this has changed.)&lt;/p&gt;
+
+&lt;p&gt;2.3% are due to &lt;a href=&quot;https://github.com/jameysharp/corrode/issues/92&quot;&gt;issue
+#92&lt;/a&gt;, which is that
+Rust doesn’t allow a parameter or variable binding to have the same name
+as a static variable that’s in scope. I’m not sure I quite understand
+why Rust does this, so if somebody could explain what’s going on in that
+issue I’d appreciate it!&lt;/p&gt;
+
+&lt;p&gt;The last few issues are pretty evenly divided into these categories:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;The new algorithm for handling arbitrary control flow doesn’t yet
+try to place variable declarations correctly, so a variable that was
+in scope in the original C may not be in scope in the generated
+Rust. It happens to almost always work out correctly anyway, so I’m
+not too worried about it yet, but I’m tracking it in &lt;a href=&quot;https://github.com/jameysharp/corrode/issues/93&quot;&gt;issue
+#93&lt;/a&gt;.&lt;/li&gt;
+  &lt;li&gt;Corrode sometimes translates uses of C-style unions that it isn’t
+actually able to handle correctly, but the error isn’t detected
+until the Rust compiler tries to figure out what to do with it. This
+will be fixed by just fully implementing unions.&lt;/li&gt;
+  &lt;li&gt;When dealing with enum types, Corrode currently adheres a little too
+closely to the letter of the C standard, and aggressively
+int-promotes enum values. Several errors would be fixed if we leave
+values as enum type as long as possible.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Over time, I’d love to automate as many of these fixes as possible. But
+in the short term I’ll probably just manually fix each issue so I can
+find out what other challenges await.&lt;/p&gt;
+
+&lt;h2 id=&quot;next-up&quot;&gt;Next up&lt;/h2&gt;
+
+&lt;p&gt;Now that I have a fairly substantial chunk of generated Rust to play
+with, I’m going to start scrutinizing it to find interesting patterns.
+Based on what I find, I’ll write up advice for people who want to turn
+unsafe C-style Rust into safe, idiomatic Rust, and if we’re lucky,
+somebody will be able to automate some of that advice.&lt;/p&gt;
+
+&lt;p&gt;Until then, I invite you to:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;read the implementation of the &lt;a href=&quot;https://github.com/jameysharp/corrode/blob/master/src/Language/Rust/Corrode/C.md&quot;&gt;C
+translator&lt;/a&gt;
+and the &lt;a href=&quot;https://github.com/jameysharp/corrode/blob/master/src/Language/Rust/Corrode/CFG.md&quot;&gt;control-flow graph
+algorithms&lt;/a&gt;;&lt;/li&gt;
+  &lt;li&gt;try running Corrode on your own programs and see how well it does;&lt;/li&gt;
+  &lt;li&gt;and contribute documentation, bug reports, or code if you can!&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>Jamey Sharp</name></author><category term="rust" /><category term="corrode" /><summary type="html">While this post’s title is a mash-up of “Hitchhiker’s Guide to the Galaxy” with Dijkstra’s 1968 letter, “Go To Statement Considered Harmful”, today I have a bunch of Corrode-related news to share, not just commentary on “goto”. But let’s start there, because I’m super proud of this…</summary></entry><entry><title type="html">Corrode update: support from Mozilla, and new features</title><link href="https://jamey.thesharps.us/2016/10/28/corrode-update-support-from-mozilla/" rel="alternate" type="text/html" title="Corrode update: support from Mozilla, and new features" /><published>2016-10-28T13:24:00-07:00</published><updated>2016-10-28T13:24:00-07:00</updated><id>https://jamey.thesharps.us/2016/10/28/corrode-update-support-from-mozilla</id><content type="html" xml:base="https://jamey.thesharps.us/2016/10/28/corrode-update-support-from-mozilla/">&lt;p&gt;It’s been a while since I’ve written about
+&lt;a href=&quot;/2016/07/08/translating-c-to-rust/&quot;&gt;Corrode&lt;/a&gt;;
+I’ve just been quietly working on it and merging contributions from
+several other people. I have a few things I’d like to mention today.&lt;/p&gt;
+
+&lt;h2 id=&quot;funding-from-mozilla&quot;&gt;Funding from Mozilla&lt;/h2&gt;
+
+&lt;p&gt;The big news: Mozilla is providing funding for me to work on Corrode for
+the next few months! I’m super excited to get to work on some of the
+trickier challenges in translating C to Rust, such as &lt;a href=&quot;/2016/05/09/how-to-eliminate-goto-statements/&quot;&gt;eliminating
+“goto”
+statements&lt;/a&gt;.
+More on that later, but first, let me tell you about the specific goal
+that Mozilla is providing support for.&lt;/p&gt;
+
+&lt;p&gt;One challenge for computing today is bit-rot in software that nobody
+wants to maintain any more, but that’s still useful to some community.
+(This is a problem for both open-source and proprietary software, but
+let’s focus on the open-source side as there are fewer roadblocks for a
+person who’s motivated to do something about it.) When users discover
+bugs and security flaws in unmaintained software, they’re often just out
+of luck.&lt;/p&gt;
+
+&lt;p&gt;Mozilla has an interest in finding better ways for people to build
+software, whether that’s through better programming tools like Rust, or
+more effective ways of organizing an open-source community. So the
+experiment I’m working on is to see if it makes sense to “rescue”
+unmaintained open source projects that were written in C by
+semi-automatically translating them to Rust.&lt;/p&gt;
+
+&lt;p&gt;To find an interesting case study, I looked through &lt;a href=&quot;https://www.debian.org/devel/wnpp/orphaned_byage&quot;&gt;Debian’s list of
+orphaned packages&lt;/a&gt; to
+find projects that have a reasonable amount of C source. I especially
+wanted to find a project with a network component, so if there are
+security flaws they may be remotely exploitable, because Rust’s safety
+guarantees have more impact there. Then I cross-checked Debian’s
+“&lt;a href=&quot;https://qa.debian.org/popcon.php&quot;&gt;Popularity Contest&lt;/a&gt;”, an opt-in
+census of which packages are installed on Debian systems, to pick a
+package that’s relatively widely-installed despite being unmaintained.&lt;/p&gt;
+
+&lt;p&gt;The package I settled on:
+&lt;a href=&quot;http://savannah.nongnu.org/projects/cvs&quot;&gt;CVS&lt;/a&gt;, the venerable
+“Concurrent Versions System”. The first release of CVS was on
+November 19, 1990, almost 26 years ago! (This is not the oldest codebase
+I’ve worked on, but it’s close.) The last upstream release of CVS was in
+2008, even though it had a security vulnerability discovered in 2012.
+This is clearly 50k lines of unmaintained C.&lt;/p&gt;
+
+&lt;p&gt;CVS was largely supplanted by Subversion a decade ago, which has largely
+been supplanted by git today. Anyone choosing CVS for a new project
+would get asked some pointed questions. But there are still tons of open
+source projects where their history is only available via CVS; you can
+find plenty of examples hosted at sites like Sourceforge or Savannah.
+And according to the Popularity Contest statistics, 6.5% of Debian users
+still have CVS installed. So there’s value in keeping the CVS
+implementation alive.&lt;/p&gt;
+
+&lt;p&gt;I’m currently working on improving Corrode to be able to translate as
+much of CVS as I can manage. After that I’ll use the generated Rust
+source to study how much manual work is needed to clean up Corrode’s
+output, and see if there are opportunities for automating more. This
+effort will wrap up by the end of the year, and hopefully I’ll have
+plenty to report by then.&lt;/p&gt;
+
+&lt;p&gt;Thanks so much to Mozilla for supporting this work!&lt;/p&gt;
+
+&lt;h2 id=&quot;recent-changes&quot;&gt;Recent changes&lt;/h2&gt;
+
+&lt;p&gt;I want to take a moment to thank all the people who have contributed to
+Corrode so far. I’ve merged pull requests from: Alec Theriault, Nathan
+Bergey, Vickenty Fesunov, Fabian Zaiser, Jeff Waugh, Jeremie Jost, Nabil
+Hassein, Amin Bandali, Getty Ritter, Robert Grosse, Sean Jensen-Grey,
+and Taylor Cramer. Thanks also to everyone who has filed bug reports, or
+commented on them to clarify details about Rust or C!&lt;/p&gt;
+
+&lt;p&gt;It’s now possible to use Corrode as a replacement for GCC, with the
+&lt;code class=&quot;highlighter-rouge&quot;&gt;corrode-cc&lt;/code&gt; script from the Corrode source tree. There are still a lot
+of bugs, but it’s good enough that I’m usually testing Corrode now by
+running &lt;code class=&quot;highlighter-rouge&quot;&gt;make CC=corrode-cc&lt;/code&gt; in various source trees, including CVS and
+musl-libc.&lt;/p&gt;
+
+&lt;p&gt;All C control-flow statements are implemented now, thanks to Fabian
+finishing off do-while loops… with the significant exceptions of
+&lt;code class=&quot;highlighter-rouge&quot;&gt;switch&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;goto&lt;/code&gt; statements, which I’m working on now in a new ‘cfg’
+branch. (See the &lt;a href=&quot;/2016/05/09/how-to-eliminate-goto-statements/&quot;&gt;first post I wrote about
+Corrode&lt;/a&gt;
+for background; I’ve been looking forward to this part for months!)&lt;/p&gt;
+
+&lt;p&gt;I’ve fixed a bunch of small issues that either made Corrode give up
+during translation due to not understanding the input, or made it
+generate invalid Rust output. The biggest change was to only translate
+declarations that are actually needed for the current translation unit.
+C header files are full of all sorts of junk, but if you don’t actually
+reference a declaration then Corrode doesn’t need to report any
+translation errors for that declaration. Fixing this let me translate my
+first 14 source files in the Linux kernel, so that was pretty exciting!&lt;/p&gt;
+
+&lt;p&gt;One change motivated specifically by my work on CVS: Corrode now handles
+K&amp;amp;R-style function definitions. Yes, CVS still uses pre-C89 style code
+in some places, while using C99 features in other places. That’ll happen
+in a project of this age.&lt;/p&gt;
+
+&lt;p&gt;One interesting bug was around calling through function pointers stored
+in struct fields. In Rust, &lt;code class=&quot;highlighter-rouge&quot;&gt;s.f()&lt;/code&gt; calls a trait method named “f” on
+“s”. To call a function pointed to by a field named “f”, you need
+parentheses, like so: &lt;code class=&quot;highlighter-rouge&quot;&gt;(s.f)()&lt;/code&gt;.  The pretty-printer for Corrode’s Rust
+AST now inserts these parentheses as needed.&lt;/p&gt;
+
+&lt;p&gt;Another pretty-printer bug is something I tried to squash before, but
+hopefully got right this time: blocks in expressions. Rust’s parser
+effectively automatically inserts semicolons after blocks under certain
+circumstances, so programmers don’t need to follow up every if-statement
+or for-loop with a semicolon. If we want to generate something like
+this:&lt;/p&gt;
+
+&lt;div class=&quot;language-rust highlighter-rouge&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;c&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;t&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;else&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;as&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;f32&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;/div&gt;
+
+&lt;p&gt;(which is a weird thing to do, but cases like this keep coming up) then
+we need to wrap the if-statement in parentheses to keep Rust’s parser
+from treating the end of the else-branch as the end of the statement.
+However, we don’t want to insert parentheses when they aren’t needed,
+because sometimes Rust will actually warn that there are unnecessary
+parentheses! Fortunately I think I have parentheses in exactly the right
+places now.&lt;/p&gt;
+
+&lt;p&gt;And, because it was driving me mad, I fixed indentation for
+pretty-printing if-else ladders. They used to zig-zag further to the
+right, and sometimes some branches would all be on one line while other
+branches were split across multiple lines. Fixing this had no effect on
+correctness of the output but it’s substantially more readable now!&lt;/p&gt;
+
+&lt;h2 id=&quot;coming-up-next&quot;&gt;Coming up next…&lt;/h2&gt;
+
+&lt;p&gt;I’m preparing a new repository for the CVS source code that will include
+scripts to let anyone reproduce my progress on that translation. I’m
+having a little trouble scripting some of the steps I do, so that’s
+taking longer than I hoped, but it’ll happen at some point.&lt;/p&gt;
+
+&lt;p&gt;A significant fraction of source files in CVS contain either switch or
+goto statements so my major focus short-term is on translating those
+control-flow constructs correctly. If you’d like to help, check out the
+discussion around
+&lt;a href=&quot;https://github.com/jameysharp/corrode/issues/30&quot;&gt;goto&lt;/a&gt; and
+&lt;a href=&quot;https://github.com/jameysharp/corrode/pull/65&quot;&gt;switch&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;I’ll post progress reports like this regularly. Keep an eye out!&lt;/p&gt;</content><author><name>Jamey Sharp</name></author><category term="rust" /><category term="corrode" /><summary type="html">It’s been a while since I’ve written about Corrode; I’ve just been quietly working on it and merging contributions from several other people. I have a few things I’d like to mention today.</summary></entry><entry><title type="html">Testing strategies for Corrode</title><link href="https://jamey.thesharps.us/2016/07/15/testing-strategies-for-corrode/" rel="alternate" type="text/html" title="Testing strategies for Corrode" /><published>2016-07-15T14:28:00-07:00</published><updated>2016-07-15T14:28:00-07:00</updated><id>https://jamey.thesharps.us/2016/07/15/testing-strategies-for-corrode</id><content type="html" xml:base="https://jamey.thesharps.us/2016/07/15/testing-strategies-for-corrode/">&lt;p&gt;Last week &lt;a href=&quot;/2016/07/08/translating-c-to-rust/&quot;&gt;I posted about
+Corrode&lt;/a&gt;,
+my C-to-Rust translator.&lt;/p&gt;
+
+&lt;p&gt;I’m quite proud of Corrode, to be perfectly frank! And apparently other
+people think it’s cool too, since it was on the front page of &lt;a href=&quot;https://news.ycombinator.com/item?id=12056230&quot;&gt;Hacker
+News&lt;/a&gt; and
+&lt;a href=&quot;https://www.reddit.com/r/rust/comments/4rv0uh/early_stage_c_to_rust_translator_written_in/&quot;&gt;/r/rust&lt;/a&gt;
+for a solid day, and it spent the subsequent week on GitHub’s list of
+trending projects. The past week has been very exciting, I gotta say!&lt;/p&gt;
+
+&lt;p&gt;A moment of reflection, then. There are a few things an open source
+project really ought to have:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;strong&gt;Responsive maintainers.&lt;/strong&gt; People have been trying Corrode on their own
+code and filing issues, and a few people have been busily submitting
+pull requests. I’ve been responding to these as quickly as I can.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;strong&gt;Solid documentation.&lt;/strong&gt; I think &lt;a href=&quot;https://github.com/jameysharp/corrode/blob/master/src/Language/Rust/Corrode/C.md&quot;&gt;documentation is pretty well
+covered&lt;/a&gt;,
+considering some of the feedback:&lt;/p&gt;
+
+    &lt;ul&gt;
+      &lt;li&gt;“Absolutely blown away by the detail of the documentation.”&lt;/li&gt;
+      &lt;li&gt;“The documentation is amazing.”&lt;/li&gt;
+      &lt;li&gt;“That’s an impressive use of literate programming.”&lt;/li&gt;
+      &lt;li&gt;“WOW… This is just amazing. The most important part of the source
+is highly educative literate haskell.”&lt;/li&gt;
+      &lt;li&gt;“Who are you and what did you do with Jamey?” —a former co-worker
+who had to maintain my code after I left&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;strong&gt;Verification/validation.&lt;/strong&gt; Um… well… did you see my documentation?&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;So it’s time for a real plan for verifying that Corrode does what it’s
+supposed to. I’ve explored several strategies so far, which have
+interesting trade-offs.&lt;/p&gt;
+
+&lt;h2 id=&quot;randomized-testing-with-csmith-and-c-reduce&quot;&gt;Randomized testing with Csmith and C-Reduce&lt;/h2&gt;
+
+&lt;p&gt;“&lt;strong&gt;&lt;a href=&quot;http://embed.cs.utah.edu/csmith/&quot;&gt;Csmith&lt;/a&gt;&lt;/strong&gt; is a tool that can
+generate random C programs that statically and dynamically conform to
+the C99 standard. It is useful for stress-testing compilers, static
+analyzers, and other tools that process C code.”&lt;/p&gt;
+
+&lt;p&gt;Corrode now has a script in
+&lt;a href=&quot;https://github.com/jameysharp/corrode/blob/master/scripts/csmith-test&quot;&gt;scripts/csmith-test&lt;/a&gt;
+which performs the following steps:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Generate a random C program using Csmith, and verify that the
+program compiles using GCC, as our reference compiler. If either of
+these fail, we won’t discover any interesting Corrode-related bugs
+with this program, so discard it.&lt;/li&gt;
+  &lt;li&gt;Convert the program to Rust using Corrode, and compile it with
+rustc. If either of these fail, this may indicate an interesting
+bug; report it to the user.&lt;/li&gt;
+  &lt;li&gt;Run the GCC-compiled program. If it times out, or exits with an
+error, or produces output that doesn’t look right for a
+Csmith-generated program, then odds are low that we’ll learn
+anything from the Rust version and we just discard this case.&lt;/li&gt;
+  &lt;li&gt;Run the Rust-compiled program and compare its output to the
+GCC-compiled version. If they’re different, that probably indicates
+an interesting bug; report it to the user.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Usually it only takes a few seconds to run through that process; but on
+the other hand, usually these tests all pass :-) so I’ve been running
+this script in a loop which stops once an interesting failure is
+actually found.&lt;/p&gt;
+
+&lt;p&gt;Once the script has produced an interestingly-buggy test case, then it
+tries to delete as much code from the test as possible while preserving
+the bug that made it interesting.
+&lt;strong&gt;&lt;a href=&quot;https://embed.cs.utah.edu/creduce/&quot;&gt;C-Reduce&lt;/a&gt;&lt;/strong&gt; does the heavy
+lifting for this part, using a variety of heuristics starting with “what
+happens if I delete this line? No? How about this one?”&lt;/p&gt;
+
+&lt;p&gt;Unlike the Csmith test cycle, C-Reduce can easily run for an hour or two
+trying to find chunks that are OK to delete. At the moment this is my
+only complaint about C-Reduce: I have so many possible bugs to
+investigate that spending an hour or two waiting on each one feels like
+a lot. That said, it’s doing a very good job of narrowing down the
+portions of code actually responsible for bugs, so I guess I’ll keep it.
+:-)&lt;/p&gt;
+
+&lt;p&gt;So far I’ve found and fixed three bugs in Corrode using Corrode’s
+csmith-test script.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;I applied C99’s “usual arithmetic conversions” to the left-shift and
+right-shift operators, but I should instead have applied the
+“integer promotions” to both operands and then taken the left-hand
+side’s type. &lt;a href=&quot;https://github.com/jameysharp/corrode/commit/3fd904058abe334b0a9e0e106011c843cf1b0eb7&quot;&gt;Fixed in commit
+3fd9040&lt;/a&gt;.&lt;/li&gt;
+  &lt;li&gt;I never realized that the type of a C99 integer literal depends not
+only on whether it has ‘U’ or ‘L’ suffixes, but also on whether it’s
+written in decimal (as opposed to octal or hex), and &lt;em&gt;also&lt;/em&gt; on
+whether its value fits in a given type. &lt;a href=&quot;https://github.com/jameysharp/corrode/commit/93671a7d1015c4f93cd6ad7110e01545579e3b02&quot;&gt;Fixed in commit
+93671a7&lt;/a&gt;.&lt;/li&gt;
+  &lt;li&gt;Apparently, I find the “usual arithmetic conversions” hard to get
+right. I’ve “fixed” them in three commits in a row and Csmith keeps
+finding new corners for me.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;My big problem with the usual arithmetic conversions is that I’m trying
+to translate C’s &lt;code class=&quot;highlighter-rouge&quot;&gt;long&lt;/code&gt; to Rust’s &lt;code class=&quot;highlighter-rouge&quot;&gt;isize&lt;/code&gt;, but in various corner cases
+that means you can distinguish between Corrode and a standard-conforming
+C compiler. I may just decide that’s a “feature”…&lt;/p&gt;
+
+&lt;p&gt;I have not found any cases yet where I could blame rustc for any wrong
+output, but you never know… it could happen!&lt;/p&gt;
+
+&lt;h2 id=&quot;building-real-software-musl-libc&quot;&gt;Building real software: musl libc&lt;/h2&gt;
+
+&lt;p&gt;The &lt;strong&gt;&lt;a href=&quot;http://www.musl-libc.org/&quot;&gt;musl&lt;/a&gt;&lt;/strong&gt; library is a from-scratch
+implementation of the C standard library, which “is &lt;em&gt;lightweight&lt;/em&gt;,
+&lt;em&gt;fast&lt;/em&gt;, &lt;em&gt;simple&lt;/em&gt;, &lt;em&gt;free&lt;/em&gt;, and strives to be &lt;em&gt;correct&lt;/em&gt; in the sense of
+standards-conformance and safety.”&lt;/p&gt;
+
+&lt;p&gt;Adam Perry has been &lt;a href=&quot;http://blog.adamperry.me/rust/2016/06/11/baby-steps-porting-musl-to-rust/&quot;&gt;manually porting musl to
+Rust&lt;/a&gt;
+as an exercise to discover “the advantages and pitfalls of a C-to-Rust
+rewrite project,” so I thought it might be a good candidate for testing
+Corrode.&lt;/p&gt;
+
+&lt;p&gt;Of particular importance for my purposes, musl doesn’t use system
+headers, which means that compared with other real C code-bases, musl
+less frequently uses parts of C that Corrode doesn’t support yet.&lt;/p&gt;
+
+&lt;p&gt;To test Corrode on musl, I first made the corrode executable accept all
+the options that GCC/Clang do (more or less), and just pass anything it
+doesn’t understand to the C preprocessor.&lt;/p&gt;
+
+&lt;p&gt;With that, you can run “make CC=corrode -k” and get a “foo.rs” file
+alongside every “foo.c” file that Corrode was successfully able to
+translate! The “-k” option tells make to keep going as long as possible
+even when some commands fail.&lt;/p&gt;
+
+&lt;p&gt;At the moment, Corrode translates about 10% of the source files in musl,
+which I feel is pretty good! I was especially excited when I got it to
+translate bsearch.c and a bunch of the string.h functions, since those
+do funny things with pointers…&lt;/p&gt;
+
+&lt;p&gt;Now, I haven’t yet tested whether any of these source files translate
+&lt;em&gt;correctly&lt;/em&gt;, and in fact I know a few of them don’t (if they have static
+local variables, or declare arrays). At the moment all I can tell you is
+that the output looks mostly reasonable, in my human judgment.&lt;/p&gt;
+
+&lt;p&gt;At some point I’d like to integrate Adam Perry’s build and test scripts
+from his manual rewriting effort, which would let me validate that
+Corrode+rustc generate code that passes musl’s test suite.&lt;/p&gt;
+
+&lt;h2 id=&quot;software-analysis-workbench&quot;&gt;Software Analysis Workbench&lt;/h2&gt;
+
+&lt;p&gt;“The &lt;strong&gt;&lt;a href=&quot;http://saw.galois.com/&quot;&gt;Software Analysis Workbench&lt;/a&gt;&lt;/strong&gt; (SAW)
+provides the ability to formally verify properties of code written in C,
+Java, and Cryptol. It leverages automated SAT and SMT solvers to make
+this process as automated as possible, and provides a scripting
+language, called SAW Script, to enable verification to scale up to more
+complex systems.”&lt;/p&gt;
+
+&lt;p&gt;Csmith-generated programs print some computed values just before
+exiting, and that’s all you can observe about them during testing. If
+there are errors mid-computation but they cancel out by the end, or
+otherwise have no effect on the final output, Csmith-based testing won’t
+find those.&lt;/p&gt;
+
+&lt;p&gt;SAW, by contrast, is designed to show that two functions compute
+equivalent outputs. In principle, we could use SAW to prove that the
+code clang generates is equivalent to the code which Corrode+rustc
+generate on a per-function basis.&lt;/p&gt;
+
+&lt;p&gt;Unfortunately, current git master of SAW can’t parse the LLVM bitcode
+which rustc produces. I hear SAW’s maintainers are working on that, so
+I’m hoping this will be an effective option for Corrode testing soon!&lt;/p&gt;
+
+&lt;h2 id=&quot;unit-tests-and-randomized-property-testing&quot;&gt;Unit tests and randomized property testing&lt;/h2&gt;
+
+&lt;p&gt;You were probably wondering why I haven’t mentioned these yet, I bet?&lt;/p&gt;
+
+&lt;p&gt;Csmith was low-hanging fruit: It has proven to be effective at finding
+bugs in Corrode with very little work on my part. And musl has quickly
+shown me which C constructs are used by a fairly substantial real-world
+code base, so I could focus on implementing those.&lt;/p&gt;
+
+&lt;p&gt;Unit tests and QuickCheck-style property testing, on the other hand,
+require a lot more thought from the developer. I just haven’t put in
+that level of thought yet.&lt;/p&gt;
+
+&lt;p&gt;As Corrode matures, I think we’ll need both focused regression tests and
+randomized property tests to test at every commit, which can be
+supplemented by periodic longer-duration Csmith runs.&lt;/p&gt;
+
+&lt;h2 id=&quot;conclusions&quot;&gt;Conclusions&lt;/h2&gt;
+
+&lt;p&gt;Corrode doesn’t support enough of C yet to translate most real programs,
+largely due to system headers declaring things like unions and enums
+even if your program never uses them. But for the subset of C which
+Corrode &lt;em&gt;does&lt;/em&gt; support, at this point I feel pretty good about the
+correctness of its translation!&lt;/p&gt;</content><author><name>Jamey Sharp</name></author><category term="rust" /><category term="corrode" /><summary type="html">Last week I posted about Corrode, my C-to-Rust translator.</summary></entry></feed>
+</wrapper>
