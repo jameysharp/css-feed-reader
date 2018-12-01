@@ -44,16 +44,24 @@
 			flex-shrink: 0;
 			flex-grow: 0;
 		}
-		#top img {
+		#top label.preload {
 			background-color: #4A1600;
-			padding: 0.5em;
-			display: block;
+			background-position: center;
+			background-repeat: no-repeat;
+			width: 2.2em;
+			height: 2.2em;
 		}
-		#top label[for] img {
+		#top label.preload[for] {
 			background-color: #93320C;
 		}
-		#top label[for] img:hover {
+		#top label.preload[for]:hover {
 			background-color: #4A1600;
+		}
+		label.before {
+			background-image: url('https://www.comic-rocket.com/media/img/icon-prevpage.png');
+		}
+		label.after {
+			background-image: url('https://www.comic-rocket.com/media/img/icon-nextpage.png');
 		}
 		#top > .title {
 			flex-grow: 1;
@@ -61,6 +69,8 @@
 			text-align: center;
 			overflow: hidden;
 			white-space: nowrap;
+			text-overflow: ellipsis;
+			margin: 0 0.5ex;
 		}
 		time {
 			color: #DDD;
@@ -201,11 +211,10 @@
 </xsl:template>
 
 <xsl:template match="*" mode="top">
-	<label class="preload page{position()}">
+	<label class="preload page{position()} before">
 		<xsl:if test="position() &gt; 1">
 			<xsl:attribute name="for">page<xsl:value-of select="position() - 1"/></xsl:attribute>
 		</xsl:if>
-		<img src="https://www.comic-rocket.com/media/img/icon-prevpage.png" />
 	</label>
 	<div class="preload page{position()} title">
 		<xsl:value-of select="atom:title"/>
@@ -213,11 +222,10 @@
 			<xsl:value-of select="substring-before(atom:published, 'T')"/>
 		</time>
 	</div>
-	<label class="preload page{position()}">
+	<label class="preload page{position()} after">
 		<xsl:if test="position() &lt; last()">
 			<xsl:attribute name="for">page<xsl:value-of select="position() + 1"/></xsl:attribute>
 		</xsl:if>
-		<img src="https://www.comic-rocket.com/media/img/icon-nextpage.png" />
 	</label>
 </xsl:template>
 
