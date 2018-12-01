@@ -1,0 +1,19 @@
+{
+
+  "manifest_version": 2,
+  "name": "CSS feed reader",
+  "version": "0.1",
+  "author": "Jamey Sharp",
+  "homepage_url": "https://github.com/jameysharp/css-feed-reader",
+
+  "description": "Preview RSS feeds in browser",
+
+  "background": {
+      "scripts": ["background.js"]
+  },
+
+  "web_accessible_resources": ["reader.xsl", "icon-nextpage.png", "icon-prevpage.png"],
+
+  "permissions": ["<all_urls>", "webRequest", "webRequestBlocking"]
+
+}
