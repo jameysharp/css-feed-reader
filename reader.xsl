@@ -9,6 +9,8 @@
 
 <xsl:output method="html" omit-xml-declaration="yes" indent="no"/>
 
+<xsl:param name="iconpath" select="'https://www.comic-rocket.com/media/img/'"/>
+
 <xsl:template match="/">
 <html>
 <head>
@@ -17,7 +19,6 @@
 	<meta name="viewport" content="width=device-width" />
 	<title><xsl:value-of select="//atom:feed/atom:title"/></title>
 	<style>
-		<xsl:text>
 		body {
 			position: absolute;
 			width: 100%;
@@ -58,10 +59,10 @@
 			background-color: #4A1600;
 		}
 		label.before {
-			background-image: url('https://www.comic-rocket.com/media/img/icon-prevpage.png');
+			background-image: url('<xsl:value-of select="$iconpath"/>icon-prevpage.png');
 		}
 		label.after {
-			background-image: url('https://www.comic-rocket.com/media/img/icon-nextpage.png');
+			background-image: url('<xsl:value-of select="$iconpath"/>icon-nextpage.png');
 		}
 		#top > .title {
 			flex-grow: 1;
@@ -134,8 +135,7 @@
 		}
 		input, .preload {
 			display: none;
-		}</xsl:text>
-		<xsl:apply-templates select="//atom:entry" mode="style" />
+		}<xsl:apply-templates select="//atom:entry" mode="style" />
 	</style>
 </head>
 <body>
